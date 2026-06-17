@@ -115,8 +115,20 @@ bool SteamController::EnableLizardMode() {
 // Input
 // ---------------------------------------------------------------------------
 
-size_t SteamController::ReadReport(uint8_t* buffer, size_t size, uint32_t timeoutMs) {
-    return m_device.ReadInputReport(buffer, size, timeoutMs);
+size_t SteamController::ReadReport(uint8_t* buffer, size_t size, uint32_t timeoutMs,
+                                  bool* deviceLost) {
+    return m_device.ReadInputReport(buffer, size, timeoutMs, deviceLost);
+}
+
+bool SteamController::IsStillConnected() const {
+    // Re-enumerate: if neither the wired controller nor the dongle is present,
+    // the device is gone. A live Windows file handle stays "valid" after an
+    // unplug, so we can't rely on IsOpen() to detect removal.
+    for (uint16_t pid : { SC2026_PID, SC2026_DONGLE_PID }) {
+        if (!HidDevice::Enumerate(VALVE_VID, pid, VENDOR_USAGE_PAGE).empty())
+            return true;
+    }
+    return false;
 }
 
 

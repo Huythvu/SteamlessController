@@ -36,8 +36,10 @@ public:
     ULONG FeatureReportByteLength() const { return m_featureReportLen; }
 
     // Read the next HID input report. buffer[0] will be the report ID on return.
-    // Returns bytes read, or 0 on timeout/error.
-    size_t ReadInputReport(uint8_t* buffer, size_t size, uint32_t timeoutMs = 1000);
+    // Returns bytes read, or 0 on timeout/error. If the read fails because the
+    // device was disconnected, *deviceLost is set to true (when provided).
+    size_t ReadInputReport(uint8_t* buffer, size_t size, uint32_t timeoutMs = 1000,
+                           bool* deviceLost = nullptr);
 
 private:
     HANDLE m_handle           = INVALID_HANDLE_VALUE;

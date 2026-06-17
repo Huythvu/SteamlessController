@@ -18,7 +18,7 @@ ControllerManager::~ControllerManager() {
 void ControllerManager::OnDeviceChange() {
     if (!m_connected)
         TryOpen();
-    else if (g_ctrl && !g_ctrl->IsOpen())
+    else if (!g_ctrl || !g_ctrl->IsStillConnected())
         Close(/*restoreLizard=*/false);
 }
 
@@ -104,7 +104,11 @@ void ControllerManager::StopReadLoop() {
 void ControllerManager::ReadLoop() {
     uint8_t buf[64];
     while (m_readRunning) {
-        size_t n = g_ctrl->ReadReport(buf, sizeof(buf), /*timeoutMs=*/32);
+        bool deviceLost = false;
+        size_t n = g_ctrl->ReadReport(buf, sizeof(buf), /*timeoutMs=*/32, &deviceLost);
+        // Controller was unplugged: stop reading so we don't spin on a dead
+        // handle. The WM_DEVICECHANGE handler tears the connection down.
+        if (deviceLost) break;
         if (n == 0) continue;
         if (buf[0] != SteamController::REPORT_STATE) continue;
         if (m_virtual) m_virtual->Update(buf, n);

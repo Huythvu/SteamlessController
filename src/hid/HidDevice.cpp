@@ -79,7 +79,8 @@ std::vector<std::wstring> HidDevice::Enumerate(uint16_t vid, uint16_t pid, uint1
 // ---------------------------------------------------------------------------
 
 HidDevice::HidDevice(HidDevice&& o) noexcept
-    : m_handle(o.m_handle), m_event(o.m_event), m_outputReportLen(o.m_outputReportLen) {
+    : m_handle(o.m_handle), m_event(o.m_event),
+      m_outputReportLen(o.m_outputReportLen), m_featureReportLen(o.m_featureReportLen) {
     o.m_handle = INVALID_HANDLE_VALUE;
     o.m_event  = INVALID_HANDLE_VALUE;
 }
@@ -87,9 +88,10 @@ HidDevice::HidDevice(HidDevice&& o) noexcept
 HidDevice& HidDevice::operator=(HidDevice&& o) noexcept {
     if (this != &o) {
         Close();
-        m_handle          = o.m_handle;
-        m_event           = o.m_event;
-        m_outputReportLen = o.m_outputReportLen;
+        m_handle           = o.m_handle;
+        m_event            = o.m_event;
+        m_outputReportLen  = o.m_outputReportLen;
+        m_featureReportLen = o.m_featureReportLen;
         o.m_handle = INVALID_HANDLE_VALUE;
         o.m_event  = INVALID_HANDLE_VALUE;
     }
@@ -187,23 +189,37 @@ bool HidDevice::SendFeatureReport(const uint8_t* data, size_t size) {
     return ok == TRUE;
 }
 
-size_t HidDevice::ReadInputReport(uint8_t* buffer, size_t size, uint32_t timeoutMs) {
+size_t HidDevice::ReadInputReport(uint8_t* buffer, size_t size, uint32_t timeoutMs,
+                                  bool* deviceLost) {
     OVERLAPPED ov{};
     ov.hEvent = m_event;
     ResetEvent(m_event);
 
     DWORD bytesRead = 0;
     if (!ReadFile(m_handle, buffer, static_cast<DWORD>(size), &bytesRead, &ov)) {
-        if (GetLastError() != ERROR_IO_PENDING)
+        DWORD err = GetLastError();
+        if (err != ERROR_IO_PENDING) {
+            // A valid HID read always goes pending; a synchronous hard failure
+            // means the handle is dead — the controller was almost certainly
+            // unplugged. Signal that so the caller stops polling.
+            if (deviceLost) *deviceLost = true;
             return 0;
+        }
 
         DWORD wait = WaitForSingleObject(m_event, timeoutMs);
         if (wait != WAIT_OBJECT_0) {
+            // Timeout: cancel the pending read AND wait for the cancellation to
+            // finish before this stack-local OVERLAPPED goes out of scope —
+            // otherwise the driver could later write into freed stack memory.
             CancelIo(m_handle);
+            GetOverlappedResult(m_handle, &ov, &bytesRead, /*bWait=*/TRUE);
             return 0;
         }
-        if (!GetOverlappedResult(m_handle, &ov, &bytesRead, FALSE))
+        if (!GetOverlappedResult(m_handle, &ov, &bytesRead, FALSE)) {
+            if (GetLastError() == ERROR_DEVICE_NOT_CONNECTED && deviceLost)
+                *deviceLost = true;
             return 0;
+        }
     }
 
     return static_cast<size_t>(bytesRead);

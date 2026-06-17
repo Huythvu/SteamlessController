@@ -126,8 +126,13 @@ public:
     bool EnableLizardMode();
 
     // Read the next raw input report. buffer[0] = report ID on return.
-    // Returns 0 on timeout.
-    size_t ReadReport(uint8_t* buffer, size_t size, uint32_t timeoutMs = 16);
+    // Returns 0 on timeout. If the read fails because the controller was
+    // disconnected, *deviceLost is set to true (when provided).
+    size_t ReadReport(uint8_t* buffer, size_t size, uint32_t timeoutMs = 16,
+                      bool* deviceLost = nullptr);
+
+    // True if the controller (wired or dongle) is still physically present.
+    bool IsStillConnected() const;
 
 private:
     void HeartbeatLoop();
