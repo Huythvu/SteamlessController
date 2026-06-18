@@ -526,7 +526,7 @@ void TrayApp::PaintMonitor(HWND hwnd) {
         circle(214, 158, 14, bit(3, 0x40), L"V");      // View
         circle(286, 158, 14, bit(2, 0x40), L"M");      // Menu
         circle(250, 160, 18, bit(4, 0x01), L"S");      // Steam
-        label(180, 186, 140, L"View    Steam    Menu");
+        label(140, 186, 220, L"View      Steam      Menu");
 
         // --- Thumbsticks (above the trackpads) ---
         roundPad(125, 280, 46, bit(3, 0x80), true, rd16(10), rd16(12), L"Left Stick");
