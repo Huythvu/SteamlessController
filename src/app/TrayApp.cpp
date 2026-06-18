@@ -18,8 +18,8 @@ static constexpr int WIN_W = 360;
 static constexpr int WIN_H = 690;
 
 // Input-monitor window client area.
-static constexpr int MON_W = 440;
-static constexpr int MON_H = 490;
+static constexpr int MON_W = 480;
+static constexpr int MON_H = 585;
 
 TrayApp::TrayApp() {
     g_app = this;
@@ -405,88 +405,125 @@ void TrayApp::PaintMonitor(HWND hwnd) {
         DrawTextW(mem, L"Enable Steamless Mode to see live input.", -1, &t,
                   DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     } else {
-        HBRUSH onBrush  = CreateSolidBrush(RGB(40, 180, 70));
-        HBRUSH offBrush = CreateSolidBrush(RGB(205, 205, 205));
-        HBRUSH dotBrush = CreateSolidBrush(RGB(40, 120, 220));
-        HBRUSH border   = static_cast<HBRUSH>(GetStockObject(GRAY_BRUSH));
+        HBRUSH onBrush   = CreateSolidBrush(RGB(40, 180, 70));
+        HBRUSH offBrush  = CreateSolidBrush(RGB(210, 212, 216));
+        HBRUSH dotBrush  = CreateSolidBrush(RGB(40, 120, 220));
+        HBRUSH bodyBrush = CreateSolidBrush(RGB(228, 230, 234));
+        HPEN   outline   = CreatePen(PS_SOLID, 1, RGB(110, 110, 110));
+        HPEN   oldPen    = static_cast<HPEN>(SelectObject(mem, outline));
 
         auto rd16 = [&](int idx) -> int16_t {
             int16_t v; std::memcpy(&v, buf + idx, 2); return v;
         };
-
-        // --- Buttons grid ---
-        struct Btn { const wchar_t* name; int byte; uint8_t mask; };
-        static const Btn btns[] = {
-            {L"A", 2, 0x01}, {L"B", 2, 0x02}, {L"X", 2, 0x04}, {L"Y", 2, 0x08}, {L"Steam", 4, 0x01},
-            {L"LB", 4, 0x08}, {L"RB", 3, 0x02}, {L"LS", 3, 0x80}, {L"RS", 2, 0x20}, {L"Menu", 2, 0x40},
-            {L"Up", 3, 0x20}, {L"Down", 3, 0x04}, {L"Left", 3, 0x10}, {L"Right", 3, 0x08}, {L"View", 3, 0x40},
-            {L"L4", 4, 0x02}, {L"L5", 4, 0x04}, {L"R4", 2, 0x80}, {L"R5", 3, 0x01}, {L"", 0, 0},
-            {L"LGrip", 5, 0x20}, {L"RGrip", 5, 0x10}, {L"", 0, 0}, {L"", 0, 0}, {L"", 0, 0},
+        auto bit = [&](int byteIdx, uint8_t mask) -> bool {
+            return (buf[byteIdx] & mask) != 0;
         };
-        const int cols = 5, cw = 78, ch = 24, gap = 4, bx = 20, by = 28;
-        for (int i = 0; i < static_cast<int>(sizeof(btns) / sizeof(btns[0])); ++i) {
-            if (!btns[i].name[0]) continue;
-            int x = bx + (i % cols) * (cw + gap);
-            int y = by + (i / cols) * (ch + gap);
-            bool on = (buf[btns[i].byte] & btns[i].mask) != 0;
-            RECT r{ x, y, x + cw, y + ch };
-            FillRect(mem, &r, on ? onBrush : offBrush);
-            FrameRect(mem, &r, border);
-            DrawTextW(mem, btns[i].name, -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-        }
+        auto label = [&](int x, int y, int w, const wchar_t* s) {
+            RECT lr{ x, y, x + w, y + 16 };
+            DrawTextW(mem, s, -1, &lr, DT_CENTER | DT_SINGLELINE);
+        };
 
-        // --- Triggers (vertical bars) ---
-        auto bar = [&](int x, int y, int w, int h, float frac, const wchar_t* label) {
-            RECT r{ x, y, x + w, y + h };
-            FillRect(mem, &r, offBrush);
-            int fh = static_cast<int>(frac * h);
-            RECT fr{ x, y + h - fh, x + w, y + h };
-            FillRect(mem, &fr, onBrush);
-            FrameRect(mem, &r, border);
-            RECT lr{ x - 6, y + h + 2, x + w + 6, y + h + 20 };
-            DrawTextW(mem, label, -1, &lr, DT_CENTER | DT_SINGLELINE);
+        // Filled rounded-rect button with a centred caption.
+        auto rrect = [&](int x, int y, int w, int h, bool on, const wchar_t* s) {
+            HBRUSH ob = static_cast<HBRUSH>(SelectObject(mem, on ? onBrush : offBrush));
+            RoundRect(mem, x, y, x + w, y + h, 8, 8);
+            SelectObject(mem, ob);
+            RECT tr{ x, y, x + w, y + h };
+            DrawTextW(mem, s, -1, &tr, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        };
+        // Filled circle button with a centred caption.
+        auto circle = [&](int cx, int cy, int r, bool on, const wchar_t* s) {
+            HBRUSH ob = static_cast<HBRUSH>(SelectObject(mem, on ? onBrush : offBrush));
+            Ellipse(mem, cx - r, cy - r, cx + r, cy + r);
+            SelectObject(mem, ob);
+            RECT tr{ cx - r, cy - r, cx + r, cy + r };
+            DrawTextW(mem, s, -1, &tr, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        };
+        // Round pad (stick or trackpad): ring highlights on click, dot tracks position.
+        auto roundPad = [&](int cx, int cy, int r, bool clicked, bool active,
+                            int16_t vx, int16_t vy, const wchar_t* s) {
+            HBRUSH ob = static_cast<HBRUSH>(SelectObject(mem, clicked ? onBrush : bodyBrush));
+            Ellipse(mem, cx - r, cy - r, cx + r, cy + r);
+            SelectObject(mem, ob);
+            if (active) {
+                int half = r - 9;
+                int dx = cx + static_cast<int>(vx / 32767.0f * half);
+                int dy = cy - static_cast<int>(vy / 32767.0f * half);
+                HBRUSH o2 = static_cast<HBRUSH>(SelectObject(mem, dotBrush));
+                Ellipse(mem, dx - 9, dy - 9, dx + 9, dy + 9);
+                SelectObject(mem, o2);
+            }
+            label(cx - r, cy + r + 3, 2 * r, s);
+        };
+        // Horizontal trigger bar that fills with travel.
+        auto bar = [&](int x, int y, int w, int h, float frac, const wchar_t* s) {
+            HBRUSH ob = static_cast<HBRUSH>(SelectObject(mem, offBrush));
+            RoundRect(mem, x, y, x + w, y + h, 6, 6);
+            int fw = static_cast<int>(frac * w);
+            if (fw > 4) {
+                SelectObject(mem, onBrush);
+                RoundRect(mem, x, y, x + fw, y + h, 6, 6);
+            }
+            SelectObject(mem, ob);
+            RECT tr{ x, y, x + w, y + h };
+            DrawTextW(mem, s, -1, &tr, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         };
         auto trig = [&](int idx) -> float {
             int16_t v = rd16(idx);
-            return v <= 0 ? 0.0f : v / 32767.0f;   // int16 max maps to 1.0
+            return v <= 0 ? 0.0f : v / 32767.0f;
         };
 
-        // --- Sticks / pads (square with a moving dot) ---
-        auto pad = [&](int x, int y, int size, int16_t vx, int16_t vy,
-                       bool active, const wchar_t* label) {
-            RECT r{ x, y, x + size, y + size };
-            FillRect(mem, &r, offBrush);
-            FrameRect(mem, &r, border);
-            RECT vmid{ x, y + size / 2, x + size, y + size / 2 + 1 };
-            FillRect(mem, &vmid, border);
-            RECT hmid{ x + size / 2, y, x + size / 2 + 1, y + size };
-            FillRect(mem, &hmid, border);
-            if (active) {
-                int half = size / 2 - 6;
-                int cx = x + size / 2 + static_cast<int>(vx / 32767.0f * half);
-                int cy = y + size / 2 - static_cast<int>(vy / 32767.0f * half);
-                RECT d{ cx - 5, cy - 5, cx + 5, cy + 5 };
-                FillRect(mem, &d, dotBrush);
-            }
-            RECT lr{ x, y + size + 2, x + size, y + size + 20 };
-            DrawTextW(mem, label, -1, &lr, DT_CENTER | DT_SINGLELINE);
-        };
+        // --- Controller body ---
+        HBRUSH bodyOld = static_cast<HBRUSH>(SelectObject(mem, bodyBrush));
+        RoundRect(mem, 30, 78, 450, 508, 70, 70);
+        SelectObject(mem, bodyOld);
 
-        const int rowY = 190, boxSz = 110;
-        bar(20,  rowY, 22, boxSz, trig(6), L"LT");
-        pad(54,  rowY, boxSz, rd16(10), rd16(12), true, L"Left Stick");
-        pad(248, rowY, boxSz, rd16(14), rd16(16), true, L"Right Stick");
-        bar(398, rowY, 22, boxSz, trig(8), L"RT");
+        // --- Triggers + bumpers across the top ---
+        bar(44, 22, 92, 18, trig(6), L"LT");
+        bar(344, 22, 92, 18, trig(8), L"RT");
+        rrect(44, 46, 92, 24, bit(4, 0x08), L"LB");
+        rrect(344, 46, 92, 24, bit(3, 0x02), L"RB");
 
-        const int padY = 350;
-        bool lTouch = (buf[5] & 0x02) != 0;   // BTN_TP_LT
-        bool rTouch = (buf[4] & 0x20) != 0;   // BTN_TP_RT
-        pad(54,  padY, boxSz, rd16(18), rd16(20), lTouch, L"Left Trackpad");
-        pad(248, padY, boxSz, rd16(24), rd16(26), rTouch, L"Right Trackpad");
+        // --- D-pad (left) ---
+        rrect(104, 118, 30, 26, bit(3, 0x20), L"Up");
+        rrect(104, 170, 30, 26, bit(3, 0x04), L"Dn");
+        rrect(74,  144, 30, 26, bit(3, 0x10), L"Lt");
+        rrect(134, 144, 30, 26, bit(3, 0x08), L"Rt");
 
+        // --- Face buttons A/B/X/Y diamond (right) ---
+        circle(366, 130, 17, bit(2, 0x08), L"Y");
+        circle(366, 184, 17, bit(2, 0x01), L"A");
+        circle(339, 157, 17, bit(2, 0x04), L"X");
+        circle(393, 157, 17, bit(2, 0x02), L"B");
+
+        // --- Center buttons (View / Steam / Menu) ---
+        circle(212, 150, 13, bit(3, 0x40), L"V");      // View
+        circle(278, 150, 13, bit(2, 0x40), L"M");      // Menu
+        circle(245, 152, 17, bit(4, 0x01), L"S");      // Steam
+        label(195, 174, 100, L"View  Steam  Menu");
+
+        // --- Trackpads (signature feature) ---
+        roundPad(120, 280, 58, bit(5, 0x04), bit(5, 0x02), rd16(18), rd16(20), L"Left Trackpad");
+        roundPad(360, 280, 58, bit(4, 0x40), bit(4, 0x20), rd16(24), rd16(26), L"Right Trackpad");
+
+        // --- Thumbsticks ---
+        roundPad(120, 410, 44, bit(3, 0x80), true, rd16(10), rd16(12), L"Left Stick");
+        roundPad(360, 410, 44, bit(2, 0x20), true, rd16(14), rd16(16), L"Right Stick");
+
+        // --- Back paddles + grips (physically behind the controller) ---
+        rrect(20,  528, 66, 26, bit(4, 0x02), L"L4");
+        rrect(92,  528, 66, 26, bit(4, 0x04), L"L5");
+        rrect(322, 528, 66, 26, bit(2, 0x80), L"R4");
+        rrect(394, 528, 66, 26, bit(3, 0x01), L"R5");
+        rrect(166, 528, 66, 26, bit(5, 0x20), L"L Grip");
+        rrect(238, 528, 66, 26, bit(5, 0x10), L"R Grip");
+
+        SelectObject(mem, oldPen);
+        DeleteObject(outline);
         DeleteObject(onBrush);
         DeleteObject(offBrush);
         DeleteObject(dotBrush);
+        DeleteObject(bodyBrush);
     }
 
     BitBlt(hdc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);
