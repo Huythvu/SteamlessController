@@ -1,5 +1,6 @@
 #pragma once
 #include "TrackpadMouse.h"
+#include "InputMapper.h"
 #include <functional>
 #include <thread>
 #include <atomic>
@@ -55,6 +56,11 @@ public:
     int  GetLeftStickSensitivity() const { return m_lStickSens; }
     int  GetRightStickSensitivity()const { return m_rStickSens; }
 
+    // Button remapping. Thread-safe (serialized against the read loop).
+    void                SetButtonAction(int sourceIndex, InputMapper::Action a);
+    InputMapper::Action GetButtonAction(int sourceIndex) const;
+    void                ResetButtonMappings();
+
     // Copy the most recent input report (for the live monitor). Returns the
     // number of bytes copied, or 0 if none captured yet. Thread-safe.
     size_t GetLatestReport(uint8_t* out, size_t outSize) const;
@@ -83,6 +89,7 @@ private:
     int                                m_rStickSens           = 50;   // 1..100
     std::unique_ptr<VirtualController> m_virtual;
     TrackpadMouse                      m_trackpad;
+    InputMapper                        m_mapper;
     mutable std::mutex                 m_inputMutex;
     std::thread                        m_readThread;
     std::atomic<bool>                  m_readRunning{false};

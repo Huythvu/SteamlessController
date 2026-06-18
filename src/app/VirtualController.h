@@ -12,7 +12,7 @@ public:
     bool IsValid()          const { return m_valid; }
     bool IsDriverMissing()  const { return m_driverMissing; }
 
-    void Update(const uint8_t* buf, size_t n);
+    void Update(const uint8_t* buf, size_t n, uint16_t buttonBits);
 
     // Per-stick radial deadzone (0..1 fraction) and response-curve exponent
     // (1 = linear, >1 = gentler near center, <1 = more aggressive).

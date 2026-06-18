@@ -30,41 +30,13 @@ static void ApplyStick(int16_t rx, int16_t ry, float dz, float expo,
 // Report translation — 0x45 → XUSB_REPORT
 // ---------------------------------------------------------------------------
 
-static XUSB_REPORT Translate(const uint8_t* buf, size_t n,
+static XUSB_REPORT Translate(const uint8_t* buf, size_t n, uint16_t buttonBits,
                              float dzL, float expL, float dzR, float expR) {
     XUSB_REPORT r{};
     if (n < 18) return r;
 
-    const uint8_t b0 = buf[2];
-    const uint8_t b1 = buf[3];
-    const uint8_t b2 = buf[4];
-
-    // Face buttons
-    if (b0 & SteamController::BTN_A) r.wButtons |= XUSB_GAMEPAD_A;
-    if (b0 & SteamController::BTN_B) r.wButtons |= XUSB_GAMEPAD_B;
-    if (b0 & SteamController::BTN_X) r.wButtons |= XUSB_GAMEPAD_X;
-    if (b0 & SteamController::BTN_Y) r.wButtons |= XUSB_GAMEPAD_Y;
-
-    // Bumpers
-    if (b2 & SteamController::BTN_LB) r.wButtons |= XUSB_GAMEPAD_LEFT_SHOULDER;
-    if (b1 & SteamController::BTN_RB) r.wButtons |= XUSB_GAMEPAD_RIGHT_SHOULDER;
-
-    // Menu / View (Start / Back)
-    if (b0 & SteamController::BTN_MENU) r.wButtons |= XUSB_GAMEPAD_START;
-    if (b1 & SteamController::BTN_VIEW) r.wButtons |= XUSB_GAMEPAD_BACK;
-
-    // Stick clicks
-    if (b1 & SteamController::BTN_LS) r.wButtons |= XUSB_GAMEPAD_LEFT_THUMB;
-    if (b0 & SteamController::BTN_RS) r.wButtons |= XUSB_GAMEPAD_RIGHT_THUMB;
-
-    // Steam / Guide button
-    if (b2 & SteamController::BTN_STEAM) r.wButtons |= XUSB_GAMEPAD_GUIDE;
-
-    // D-pad
-    if (b1 & SteamController::BTN_DPAD_UP)  r.wButtons |= XUSB_GAMEPAD_DPAD_UP;
-    if (b1 & SteamController::BTN_DPAD_DN)  r.wButtons |= XUSB_GAMEPAD_DPAD_DOWN;
-    if (b1 & SteamController::BTN_DPAD_LT)  r.wButtons |= XUSB_GAMEPAD_DPAD_LEFT;
-    if (b1 & SteamController::BTN_DPAD_RT)  r.wButtons |= XUSB_GAMEPAD_DPAD_RIGHT;
+    // Button bits are supplied by the InputMapper (configurable remapping).
+    r.wButtons = buttonBits;
 
     // Triggers: 16-bit signed (0x0000–0x7FFF) → 8-bit (0–255)
     int16_t ltRaw, rtRaw;
@@ -130,9 +102,9 @@ VirtualController::~VirtualController() {
     }
 }
 
-void VirtualController::Update(const uint8_t* buf, size_t n) {
+void VirtualController::Update(const uint8_t* buf, size_t n, uint16_t buttonBits) {
     if (!m_valid) return;
-    XUSB_REPORT report = Translate(buf, n, m_dzL, m_expL, m_dzR, m_expR);
+    XUSB_REPORT report = Translate(buf, n, buttonBits, m_dzL, m_expL, m_dzR, m_expR);
     vigem_target_x360_update(static_cast<PVIGEM_CLIENT>(m_client),
                              static_cast<PVIGEM_TARGET>(m_target),
                              report);

@@ -75,6 +75,7 @@ void ControllerManager::DisableGameMode() {
     {
         std::lock_guard<std::mutex> lock(m_inputMutex);
         m_trackpad.Reset();
+        m_mapper.ReleaseKeys();
         m_virtual.reset();
     }
     g_ctrl->EnableLizardMode();
@@ -180,6 +181,7 @@ void ControllerManager::Close(bool restoreLizard) {
     {
         std::lock_guard<std::mutex> lock(m_inputMutex);
         m_trackpad.Reset();
+        m_mapper.ReleaseKeys();
         m_virtual.reset();
     }
     if (g_ctrl) {
@@ -222,7 +224,8 @@ void ControllerManager::ReadLoop() {
         if (buf[0] != SteamController::REPORT_STATE) continue;
         {
             std::lock_guard<std::mutex> lock(m_inputMutex);
-            if (m_virtual) m_virtual->Update(buf, n);
+            uint16_t buttonBits = m_mapper.Process(buf, n);
+            if (m_virtual) m_virtual->Update(buf, n, buttonBits);
             m_trackpad.Update(buf, n);
         }
 
@@ -239,6 +242,7 @@ void ControllerManager::ReadLoop() {
         {
             std::lock_guard<std::mutex> lock(m_inputMutex);
             m_trackpad.Reset();
+            m_mapper.ReleaseKeys();
             m_virtual.reset();
         }
         if (g_ctrl) g_ctrl->Close();
@@ -253,4 +257,20 @@ size_t ControllerManager::GetLatestReport(uint8_t* out, size_t outSize) const {
     size_t len = m_lastReportLen < outSize ? m_lastReportLen : outSize;
     std::memcpy(out, m_lastReport, len);
     return len;
+}
+
+void ControllerManager::SetButtonAction(int sourceIndex, InputMapper::Action a) {
+    std::lock_guard<std::mutex> lock(m_inputMutex);
+    m_mapper.SetAction(sourceIndex, a);
+}
+
+InputMapper::Action ControllerManager::GetButtonAction(int sourceIndex) const {
+    std::lock_guard<std::mutex> lock(m_inputMutex);
+    return m_mapper.GetAction(sourceIndex);
+}
+
+void ControllerManager::ResetButtonMappings() {
+    std::lock_guard<std::mutex> lock(m_inputMutex);
+    m_mapper.ReleaseKeys();
+    m_mapper.ResetToDefaults();
 }
