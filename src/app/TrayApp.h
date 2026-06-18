@@ -16,6 +16,10 @@ private:
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
     LRESULT HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
 
+    void CreateControls(HWND hwnd);
+    void RefreshControls();
+    void ShowMainWindow();
+
     void AddTrayIcon();
     void RemoveTrayIcon();
     void UpdateTrayIcon(bool connected, bool gameModeActive, bool vigemMissing = false);
@@ -31,14 +35,21 @@ private:
     UINT                               m_wmTaskbar = 0;
     HICON                              m_iconOff   = nullptr;
     HICON                              m_iconOn    = nullptr;
+    HFONT                              m_font      = nullptr;
     std::unique_ptr<ControllerManager> m_controller;
 
-    static constexpr UINT IDM_TOGGLE        = 1001;
+    // Tray menu command IDs
+    static constexpr UINT IDM_OPEN          = 1001;
     static constexpr UINT IDM_EXIT          = 1002;
-    static constexpr UINT IDM_TRACKPAD      = 1003;
-    static constexpr UINT IDM_BACKBUTTONS   = 1004;
-    static constexpr UINT IDM_LEFT_TRACKPAD = 1005;
-    static constexpr UINT IDM_STARTUP       = 1006;
-    static constexpr UINT WM_TRAY          = WM_APP + 1;
-    static constexpr UINT TRAY_UID         = 1;
+
+    // Main-window control IDs
+    static constexpr UINT IDC_STATUS        = 2000;
+    static constexpr UINT IDC_TOGGLE        = 2001;
+    static constexpr UINT IDC_TRACKPAD      = 2002;
+    static constexpr UINT IDC_BACKBUTTONS   = 2003;
+    static constexpr UINT IDC_LEFT_TRACKPAD = 2004;
+    static constexpr UINT IDC_STARTUP       = 2005;
+
+    static constexpr UINT WM_TRAY  = WM_APP + 1;
+    static constexpr UINT TRAY_UID = 1;
 };

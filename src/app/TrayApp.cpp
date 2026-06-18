@@ -2,12 +2,17 @@
 #include "ControllerManager.h"
 #include "resource.h"
 #include <shellapi.h>
+#include <commctrl.h>
 #include <dbt.h>
 #include <winreg.h>
 
 static TrayApp* g_app = nullptr;
 
-static constexpr wchar_t WNDCLASS_NAME[] = L"SteamlessControllerTray";
+static constexpr wchar_t WNDCLASS_NAME[] = L"SteamlessControllerWindow";
+
+// Main-window client area. Controls are laid out within this.
+static constexpr int WIN_W = 360;
+static constexpr int WIN_H = 300;
 
 TrayApp::TrayApp() {
     g_app = this;
@@ -15,6 +20,7 @@ TrayApp::TrayApp() {
 
 TrayApp::~TrayApp() {
     RemoveTrayIcon();
+    if (m_font) DeleteObject(m_font);
     g_app = nullptr;
 }
 
@@ -24,16 +30,31 @@ bool TrayApp::Init(HINSTANCE hInstance) {
     m_iconOn    = LoadIconW(hInstance, MAKEINTRESOURCEW(IDI_ICON_ON));
     m_wmTaskbar = RegisterWindowMessageW(L"TaskbarCreated");
 
+    // Enable modern visual styles for the standard controls (checkboxes/buttons).
+    INITCOMMONCONTROLSEX icc{ sizeof(icc), ICC_STANDARD_CLASSES };
+    InitCommonControlsEx(&icc);
+
     WNDCLASSEXW wc{};
     wc.cbSize        = sizeof(wc);
     wc.lpfnWndProc   = WndProc;
     wc.hInstance     = hInstance;
     wc.lpszClassName = WNDCLASS_NAME;
+    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
+    wc.hCursor       = LoadCursorW(nullptr, IDC_ARROW);
+    wc.hIcon         = m_iconOff;
+    wc.hIconSm       = m_iconOff;
     if (!RegisterClassExW(&wc)) return false;
 
-    // Message-only window — invisible, never shown.
+    // Fixed-size window: caption + close + minimize, no resize or maximize.
+    DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
+    RECT rc{ 0, 0, WIN_W, WIN_H };
+    AdjustWindowRect(&rc, style, FALSE);
+
+    // Created hidden — shown only when the user opens it from the tray.
     m_hwnd = CreateWindowExW(0, WNDCLASS_NAME, L"SteamlessController",
-                             0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, hInstance, nullptr);
+                             style, CW_USEDEFAULT, CW_USEDEFAULT,
+                             rc.right - rc.left, rc.bottom - rc.top,
+                             nullptr, nullptr, hInstance, nullptr);
     if (!m_hwnd) return false;
 
     // Register for HID device arrival/removal notifications.
@@ -60,8 +81,11 @@ int TrayApp::Run() {
     BOOL ret;
     while ((ret = GetMessageW(&msg, nullptr, 0, 0)) != 0) {
         if (ret == -1) return -1;
-        TranslateMessage(&msg);
-        DispatchMessageW(&msg);
+        // Let standard keyboard navigation (Tab / Space) work in the window.
+        if (!IsDialogMessageW(m_hwnd, &msg)) {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
     }
     return static_cast<int>(msg.wParam);
 }
@@ -78,42 +102,64 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
 
     switch (msg) {
+    case WM_CREATE:
+        CreateControls(hwnd);
+        return 0;
+
     case WM_TRAY:
         if (LOWORD(lp) == NIN_BALLOONUSERCLICK)
             ShellExecuteW(nullptr, L"open", L"https://github.com/nefarius/ViGEmBus/releases/latest",
                           nullptr, nullptr, SW_SHOWNORMAL);
-        else if (LOWORD(lp) == WM_RBUTTONUP || LOWORD(lp) == WM_LBUTTONUP)
+        else if (LOWORD(lp) == WM_LBUTTONUP)
+            ShowMainWindow();
+        else if (LOWORD(lp) == WM_RBUTTONUP)
             ShowContextMenu();
         return 0;
 
     case WM_COMMAND:
         switch (LOWORD(wp)) {
-        case IDM_TOGGLE:
+        case IDM_OPEN:
+            ShowMainWindow();
+            break;
+        case IDC_TOGGLE:
             if (m_controller->IsGameModeActive())
                 m_controller->DisableGameMode();
             else
                 m_controller->EnableGameMode();
+            RefreshControls();
             break;
-        case IDM_TRACKPAD:
-            m_controller->SetTrackpadMouseEnabled(!m_controller->IsTrackpadMouseEnabled());
+        case IDC_TRACKPAD:
+            m_controller->SetTrackpadMouseEnabled(IsDlgButtonChecked(hwnd, IDC_TRACKPAD) == BST_CHECKED);
             SaveSettings();
             break;
-        case IDM_BACKBUTTONS:
-            m_controller->SetBackButtonsEnabled(!m_controller->IsBackButtonsEnabled());
+        case IDC_BACKBUTTONS:
+            m_controller->SetBackButtonsEnabled(IsDlgButtonChecked(hwnd, IDC_BACKBUTTONS) == BST_CHECKED);
             SaveSettings();
             break;
-        case IDM_LEFT_TRACKPAD:
-            m_controller->SetUseLeftTrackpad(!m_controller->IsUseLeftTrackpad());
+        case IDC_LEFT_TRACKPAD:
+            m_controller->SetUseLeftTrackpad(IsDlgButtonChecked(hwnd, IDC_LEFT_TRACKPAD) == BST_CHECKED);
             SaveSettings();
             break;
-        case IDM_STARTUP:
-            SetStartupEnabled(!IsStartupEnabled());
+        case IDC_STARTUP:
+            SetStartupEnabled(IsDlgButtonChecked(hwnd, IDC_STARTUP) == BST_CHECKED);
             break;
         case IDM_EXIT:
             m_controller->DisableGameMode();
             PostQuitMessage(0);
             break;
         }
+        return 0;
+
+    case WM_CTLCOLORSTATIC: {
+        // Make the status label's background blend with the window.
+        HDC dc = reinterpret_cast<HDC>(wp);
+        SetBkMode(dc, TRANSPARENT);
+        return reinterpret_cast<LRESULT>(GetSysColorBrush(COLOR_BTNFACE));
+    }
+
+    case WM_CLOSE:
+        // Closing the window just hides it — the app keeps running in the tray.
+        ShowWindow(hwnd, SW_HIDE);
         return 0;
 
     case WM_DEVICECHANGE:
@@ -127,6 +173,79 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
     return DefWindowProcW(hwnd, msg, wp, lp);
 }
+
+// ---------------------------------------------------------------------------
+// Main window controls
+// ---------------------------------------------------------------------------
+
+void TrayApp::CreateControls(HWND hwnd) {
+    // Use the standard UI font instead of the ugly default system font.
+    NONCLIENTMETRICSW ncm{};
+    ncm.cbSize = sizeof(ncm);
+    SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0);
+    m_font = CreateFontIndirectW(&ncm.lfMessageFont);
+
+    auto make = [&](const wchar_t* cls, const wchar_t* text, DWORD style,
+                    int x, int y, int w, int h, UINT id) {
+        HWND c = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style,
+                                 x, y, w, h, hwnd,
+                                 reinterpret_cast<HMENU>(static_cast<UINT_PTR>(id)),
+                                 m_hInstance, nullptr);
+        SendMessageW(c, WM_SETFONT, reinterpret_cast<WPARAM>(m_font), TRUE);
+    };
+
+    const int M = 20;          // margin
+    const int W = WIN_W - 2*M; // content width
+
+    make(L"STATIC", L"", SS_LEFT,                       M,  15, W, 20, IDC_STATUS);
+    make(L"BUTTON", L"Enable Steamless Mode", BS_PUSHBUTTON | WS_TABSTOP,
+                                                        M,  45, W, 34, IDC_TOGGLE);
+
+    make(L"STATIC", L"Options", SS_LEFT,               M,  92, W, 18, 0);
+    make(L"BUTTON", L"Trackpad Mouse",
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 115, W, 22, IDC_TRACKPAD);
+    make(L"BUTTON", L"Back Buttons for Clicking",
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 140, W, 22, IDC_BACKBUTTONS);
+    make(L"BUTTON", L"Use Left Trackpad Instead",
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 165, W, 22, IDC_LEFT_TRACKPAD);
+    make(L"BUTTON", L"Start with Windows",
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 200, W, 22, IDC_STARTUP);
+}
+
+void TrayApp::RefreshControls() {
+    if (!m_controller) return;
+
+    bool connected = m_controller->IsConnected();
+    bool gameModeOn = m_controller->IsGameModeActive();
+
+    SetDlgItemTextW(m_hwnd, IDC_TOGGLE,
+                    gameModeOn ? L"Disable Steamless Mode" : L"Enable Steamless Mode");
+    EnableWindow(GetDlgItem(m_hwnd, IDC_TOGGLE), connected);
+
+    const wchar_t* status = gameModeOn ? L"Steamless Mode: ON"
+                          : connected  ? L"Controller connected (Steamless Mode off)"
+                                       : L"No controller found";
+    SetDlgItemTextW(m_hwnd, IDC_STATUS, status);
+
+    CheckDlgButton(m_hwnd, IDC_TRACKPAD,
+                   m_controller->IsTrackpadMouseEnabled() ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(m_hwnd, IDC_BACKBUTTONS,
+                   m_controller->IsBackButtonsEnabled() ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(m_hwnd, IDC_LEFT_TRACKPAD,
+                   m_controller->IsUseLeftTrackpad() ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(m_hwnd, IDC_STARTUP,
+                   IsStartupEnabled() ? BST_CHECKED : BST_UNCHECKED);
+}
+
+void TrayApp::ShowMainWindow() {
+    RefreshControls();
+    ShowWindow(m_hwnd, SW_SHOW);
+    SetForegroundWindow(m_hwnd);
+}
+
+// ---------------------------------------------------------------------------
+// Tray icon
+// ---------------------------------------------------------------------------
 
 void TrayApp::AddTrayIcon() {
     NOTIFYICONDATAW nid{};
@@ -166,6 +285,10 @@ void TrayApp::UpdateTrayIcon(bool connected, bool gameModeActive, bool vigemMiss
     nid.hIcon  = gameModeOn ? m_iconOn : m_iconOff;
     wcscpy_s(nid.szTip, tip);
     Shell_NotifyIconW(NIM_MODIFY, &nid);
+
+    // Keep the window in sync if it happens to be open.
+    if (IsWindowVisible(m_hwnd))
+        RefreshControls();
 }
 
 void TrayApp::ShowViGEmBalloon() {
@@ -179,6 +302,10 @@ void TrayApp::ShowViGEmBalloon() {
     wcscpy_s(nid.szInfo,      L"ViGEmBus is not installed. Click here to download it.");
     Shell_NotifyIconW(NIM_MODIFY, &nid);
 }
+
+// ---------------------------------------------------------------------------
+// Settings / startup (registry)
+// ---------------------------------------------------------------------------
 
 static constexpr wchar_t REG_KEY[]     = L"Software\\SteamlessController";
 static constexpr wchar_t REG_RUN_KEY[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
@@ -252,35 +379,8 @@ void TrayApp::SaveSettings() {
 }
 
 void TrayApp::ShowContextMenu() {
-    bool connected      = m_controller->IsConnected();
-    bool gameModeOn     = m_controller->IsGameModeActive();
-    bool trackpadOn     = m_controller->IsTrackpadMouseEnabled();
-    bool backButtonsOn  = m_controller->IsBackButtonsEnabled();
-    bool leftTrackpad   = m_controller->IsUseLeftTrackpad();
-    bool startupOn      = IsStartupEnabled();
-
     HMENU menu = CreatePopupMenu();
-
-    UINT toggleFlags = MF_STRING | (connected ? MF_ENABLED : MF_GRAYED);
-    AppendMenuW(menu, toggleFlags, IDM_TOGGLE,
-                gameModeOn ? L"Disable Steamless Mode" : L"Enable Steamless Mode");
-
-    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-
-    UINT trackpadFlags = MF_STRING | (trackpadOn ? MF_CHECKED : MF_UNCHECKED);
-    AppendMenuW(menu, trackpadFlags, IDM_TRACKPAD, L"Enable Trackpad Mouse");
-
-    UINT backFlags = MF_STRING | (backButtonsOn ? MF_CHECKED : MF_UNCHECKED);
-    AppendMenuW(menu, backFlags, IDM_BACKBUTTONS, L"Enable Back Buttons for Clicking");
-
-    UINT leftFlags = MF_STRING | (leftTrackpad ? MF_CHECKED : MF_UNCHECKED);
-    AppendMenuW(menu, leftFlags, IDM_LEFT_TRACKPAD, L"Use Left Trackpad Instead");
-
-    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-
-    UINT startupFlags = MF_STRING | (startupOn ? MF_CHECKED : MF_UNCHECKED);
-    AppendMenuW(menu, startupFlags, IDM_STARTUP, L"Start with Windows");
-
+    AppendMenuW(menu, MF_STRING, IDM_OPEN, L"Open");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, IDM_EXIT, L"Exit");
 

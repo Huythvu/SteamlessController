@@ -1,4 +1,9 @@
+#include <windows.h>
 #include "resource.h"
 
 IDI_ICON_OFF  ICON  "SteamControllerOFF.ico"
 IDI_ICON_ON   ICON  "SteamControllerON.ico"
+
+// Embed the application manifest so the standard controls use modern
+// (Common Controls 6.0) visual styles.
+1 RT_MANIFEST "app.manifest"

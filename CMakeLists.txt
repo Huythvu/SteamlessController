@@ -56,7 +56,7 @@ add_executable(SteamlessController WIN32
     resources/app.rc
 )
 target_include_directories(SteamlessController PRIVATE resources)
-target_link_libraries(SteamlessController PRIVATE SteamController ViGEmClient)
+target_link_libraries(SteamlessController PRIVATE SteamController ViGEmClient comctl32)
 if (MSVC)
     target_compile_options(SteamlessController PRIVATE /W4 /WX)
 endif()
