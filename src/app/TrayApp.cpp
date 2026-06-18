@@ -1,5 +1,6 @@
 #include "TrayApp.h"
 #include "ControllerManager.h"
+#include "InputMapper.h"
 #include "resource.h"
 #include <shellapi.h>
 #include <commctrl.h>
@@ -7,19 +8,25 @@
 #include <winreg.h>
 #include <cstdint>
 #include <cstring>
+#include <cstdio>
 
 static TrayApp* g_app = nullptr;
 
 static constexpr wchar_t WNDCLASS_NAME[] = L"SteamlessControllerWindow";
 static constexpr wchar_t MON_CLASS_NAME[] = L"SteamlessControllerMonitor";
+static constexpr wchar_t MAP_CLASS_NAME[] = L"SteamlessControllerMapping";
 
 // Main-window client area. Controls are laid out within this.
 static constexpr int WIN_W = 360;
-static constexpr int WIN_H = 690;
+static constexpr int WIN_H = 716;
 
 // Input-monitor window client area.
 static constexpr int MON_W = 506;
 static constexpr int MON_H = 610;
+
+// Button-mapping window client area.
+static constexpr int MAP_W = 566;
+static constexpr int MAP_H = 366;
 
 TrayApp::TrayApp() {
     g_app = this;
@@ -63,6 +70,17 @@ bool TrayApp::Init(HINSTANCE hInstance) {
     mwc.hIcon         = m_iconOff;
     mwc.hIconSm       = m_iconOff;
     if (!RegisterClassExW(&mwc)) return false;
+
+    WNDCLASSEXW pwc{};
+    pwc.cbSize        = sizeof(pwc);
+    pwc.lpfnWndProc   = MappingWndProc;
+    pwc.hInstance     = hInstance;
+    pwc.lpszClassName = MAP_CLASS_NAME;
+    pwc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
+    pwc.hCursor       = LoadCursorW(nullptr, reinterpret_cast<LPCWSTR>(IDC_ARROW));
+    pwc.hIcon         = m_iconOff;
+    pwc.hIconSm       = m_iconOff;
+    if (!RegisterClassExW(&pwc)) return false;
 
     // Fixed-size window: caption + close + minimize, no resize or maximize.
     DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
@@ -151,6 +169,9 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             break;
         case IDC_MONITOR:
             ShowMonitor();
+            break;
+        case IDC_MAPPING:
+            ShowMapping();
             break;
         case IDC_TOGGLE:
             if (m_controller->IsGameModeActive())
@@ -301,6 +322,8 @@ void TrayApp::CreateControls(HWND hwnd) {
          BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 604, W, 22, IDC_STARTUP);
     make(L"BUTTON", L"Input Monitor", BS_PUSHBUTTON | WS_TABSTOP,
                                                         M, 634, W, 30, IDC_MONITOR);
+    make(L"BUTTON", L"Button Mapping", BS_PUSHBUTTON | WS_TABSTOP,
+                                                        M, 670, W, 30, IDC_MAPPING);
 }
 
 void TrayApp::RefreshControls() {
@@ -564,6 +587,144 @@ void TrayApp::PaintMonitor(HWND hwnd) {
 }
 
 // ---------------------------------------------------------------------------
+// Button mapping window
+// ---------------------------------------------------------------------------
+
+// Combo option index <-> action. Option 0 = None; 1..NX = Xbox targets;
+// NX+1.. = key targets.
+static InputMapper::Action MapIndexToAction(int idx) {
+    const int nx = InputMapper::kXboxTargetCount;
+    if (idx <= 0) return { InputMapper::Type::None, 0 };
+    if (idx <= nx) {
+        const auto& t = InputMapper::kXboxTargets[idx - 1];
+        return { t.type, t.value };
+    }
+    int k = idx - 1 - nx;
+    if (k >= 0 && k < InputMapper::kKeyTargetCount) {
+        const auto& t = InputMapper::kKeyTargets[k];
+        return { t.type, t.value };
+    }
+    return { InputMapper::Type::None, 0 };
+}
+
+static int MapActionToIndex(InputMapper::Action a) {
+    const int nx = InputMapper::kXboxTargetCount;
+    if (a.type == InputMapper::Type::Xbox) {
+        for (int i = 0; i < nx; ++i)
+            if (InputMapper::kXboxTargets[i].value == a.value) return 1 + i;
+    } else if (a.type == InputMapper::Type::Key) {
+        for (int i = 0; i < InputMapper::kKeyTargetCount; ++i)
+            if (InputMapper::kKeyTargets[i].value == a.value) return 1 + nx + i;
+    }
+    return 0;
+}
+
+static void PopulateMapCombo(HWND combo) {
+    SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"(None)"));
+    wchar_t buf[48];
+    for (int i = 0; i < InputMapper::kXboxTargetCount; ++i) {
+        swprintf_s(buf, L"Xbox: %s", InputMapper::kXboxTargets[i].name);
+        SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(buf));
+    }
+    for (int i = 0; i < InputMapper::kKeyTargetCount; ++i) {
+        swprintf_s(buf, L"Key: %s", InputMapper::kKeyTargets[i].name);
+        SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(buf));
+    }
+}
+
+LRESULT CALLBACK TrayApp::MappingWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    if (g_app) return g_app->HandleMappingMessage(hwnd, msg, wp, lp);
+    return DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+LRESULT TrayApp::HandleMappingMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+    case WM_CREATE:
+        CreateMappingControls(hwnd);
+        return 0;
+
+    case WM_COMMAND: {
+        UINT id   = LOWORD(wp);
+        UINT code = HIWORD(wp);
+        if (id == IDC_MAP_RESET && code == BN_CLICKED) {
+            m_controller->ResetButtonMappings();
+            RefreshMappingControls();
+            SaveSettings();
+        } else if (code == CBN_SELCHANGE && id >= IDC_MAP_BASE &&
+                   id < IDC_MAP_BASE + static_cast<UINT>(InputMapper::kSourceCount)) {
+            int i   = static_cast<int>(id - IDC_MAP_BASE);
+            int sel = static_cast<int>(SendMessageW(reinterpret_cast<HWND>(lp), CB_GETCURSEL, 0, 0));
+            m_controller->SetButtonAction(i, MapIndexToAction(sel));
+            SaveSettings();
+        }
+        return 0;
+    }
+
+    case WM_CTLCOLORSTATIC: {
+        HDC dc = reinterpret_cast<HDC>(wp);
+        SetBkMode(dc, TRANSPARENT);
+        return reinterpret_cast<LRESULT>(GetSysColorBrush(COLOR_BTNFACE));
+    }
+
+    case WM_CLOSE:
+        ShowWindow(hwnd, SW_HIDE);
+        return 0;
+    }
+    return DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+void TrayApp::ShowMapping() {
+    if (!m_mappingHwnd) {
+        DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
+        RECT rc{ 0, 0, MAP_W, MAP_H };
+        AdjustWindowRect(&rc, style, FALSE);
+        m_mappingHwnd = CreateWindowExW(0, MAP_CLASS_NAME, L"Button Mapping", style,
+                                        CW_USEDEFAULT, CW_USEDEFAULT,
+                                        rc.right - rc.left, rc.bottom - rc.top,
+                                        m_hwnd, nullptr, m_hInstance, nullptr);
+        if (!m_mappingHwnd) return;
+    }
+    RefreshMappingControls();
+    ShowWindow(m_mappingHwnd, SW_SHOW);
+    SetForegroundWindow(m_mappingHwnd);
+}
+
+void TrayApp::CreateMappingControls(HWND hwnd) {
+    auto mk = [&](const wchar_t* cls, const wchar_t* text, DWORD style,
+                  int x, int y, int w, int h, UINT id) -> HWND {
+        HWND c = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style,
+                                 x, y, w, h, hwnd,
+                                 reinterpret_cast<HMENU>(static_cast<UINT_PTR>(id)),
+                                 m_hInstance, nullptr);
+        SendMessageW(c, WM_SETFONT, reinterpret_cast<WPARAM>(m_font), TRUE);
+        return c;
+    };
+
+    const int rows = (InputMapper::kSourceCount + 1) / 2;  // 10 per column
+    for (int i = 0; i < InputMapper::kSourceCount; ++i) {
+        const bool leftCol = i < rows;
+        const int  row = leftCol ? i : i - rows;
+        const int  x   = leftCol ? 16 : 296;
+        const int  y   = 14 + row * 30;
+        mk(L"STATIC", InputMapper::kSources[i].name, SS_LEFT, x, y + 3, 96, 18, 0);
+        HWND combo = mk(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP,
+                        x + 100, y, 150, 240, IDC_MAP_BASE + i);
+        PopulateMapCombo(combo);
+    }
+
+    mk(L"BUTTON", L"Reset to Defaults", BS_PUSHBUTTON | WS_TABSTOP,
+       16, 14 + rows * 30 + 6, 160, 28, IDC_MAP_RESET);
+}
+
+void TrayApp::RefreshMappingControls() {
+    if (!m_mappingHwnd || !m_controller) return;
+    for (int i = 0; i < InputMapper::kSourceCount; ++i) {
+        int idx = MapActionToIndex(m_controller->GetButtonAction(i));
+        SendMessageW(GetDlgItem(m_mappingHwnd, IDC_MAP_BASE + i), CB_SETCURSEL, idx, 0);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tray icon
 // ---------------------------------------------------------------------------
 
@@ -693,6 +854,19 @@ void TrayApp::LoadSettings() {
     m_controller->SetLeftStickSensitivity (static_cast<int>(readDword(L"LeftStickSens",       50)));
     m_controller->SetRightStickSensitivity(static_cast<int>(readDword(L"RightStickSens",      50)));
 
+    // Button mappings: 0xFFFFFFFF sentinel means "not set" -> keep default.
+    for (int i = 0; i < InputMapper::kSourceCount; ++i) {
+        wchar_t name[16];
+        swprintf_s(name, L"MapBtn%d", i);
+        DWORD v = readDword(name, 0xFFFFFFFF);
+        if (v != 0xFFFFFFFF) {
+            InputMapper::Action a;
+            a.type  = static_cast<InputMapper::Type>((v >> 16) & 0xFF);
+            a.value = static_cast<uint16_t>(v & 0xFFFF);
+            m_controller->SetButtonAction(i, a);
+        }
+    }
+
     RegCloseKey(key);
 }
 
@@ -725,6 +899,15 @@ void TrayApp::SaveSettings() {
     writeDword(L"RightDeadzone",       static_cast<DWORD>(m_controller->GetRightDeadzone()));
     writeDword(L"LeftStickSens",       static_cast<DWORD>(m_controller->GetLeftStickSensitivity()));
     writeDword(L"RightStickSens",      static_cast<DWORD>(m_controller->GetRightStickSensitivity()));
+
+    for (int i = 0; i < InputMapper::kSourceCount; ++i) {
+        InputMapper::Action a = m_controller->GetButtonAction(i);
+        DWORD v = (static_cast<DWORD>(static_cast<uint8_t>(a.type)) << 16) |
+                  static_cast<DWORD>(a.value);
+        wchar_t name[16];
+        swprintf_s(name, L"MapBtn%d", i);
+        writeDword(name, v);
+    }
 
     RegCloseKey(key);
 }

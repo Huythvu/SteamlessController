@@ -23,6 +23,12 @@ private:
     void ShowMonitor();
     void PaintMonitor(HWND hwnd);
 
+    static LRESULT CALLBACK MappingWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
+    LRESULT HandleMappingMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
+    void ShowMapping();
+    void CreateMappingControls(HWND hwnd);
+    void RefreshMappingControls();
+
     void CreateControls(HWND hwnd);
     void RefreshControls();
     void ShowMainWindow();
@@ -44,6 +50,7 @@ private:
     HICON                              m_iconOn    = nullptr;
     HFONT                              m_font      = nullptr;
     HWND                               m_monitorHwnd = nullptr;
+    HWND                               m_mappingHwnd = nullptr;
     HDEVNOTIFY                         m_devNotify = nullptr;
     std::unique_ptr<ControllerManager> m_controller;
     std::atomic_bool                   m_pendingConnected{false};
@@ -54,7 +61,12 @@ private:
     static constexpr UINT IDM_OPEN          = 1001;
     static constexpr UINT IDM_EXIT          = 1002;
     static constexpr UINT IDC_MONITOR       = 1003;
+    static constexpr UINT IDC_MAPPING       = 1004;
     static constexpr UINT MON_TIMER         = 1;
+
+    // Mapping window: one combo per source button, plus a reset button.
+    static constexpr UINT IDC_MAP_BASE      = 3000;   // .. 3000 + kSourceCount-1
+    static constexpr UINT IDC_MAP_RESET     = 3100;
 
     // Main-window control IDs
     static constexpr UINT IDC_STATUS        = 2000;
