@@ -27,6 +27,7 @@ TrayApp::TrayApp() {
 
 TrayApp::~TrayApp() {
     RemoveTrayIcon();
+    if (m_devNotify) UnregisterDeviceNotification(m_devNotify);
     if (m_font) DeleteObject(m_font);
     g_app = nullptr;
 }
@@ -82,11 +83,14 @@ bool TrayApp::Init(HINSTANCE hInstance) {
     // HID device interface GUID
     filter.dbcc_classguid  = {0x4D1E55B2, 0xF16F, 0x11CF,
                               {0x88, 0xCB, 0x00, 0x11, 0x11, 0x00, 0x00, 0x30}};
-    RegisterDeviceNotificationW(m_hwnd, &filter, DEVICE_NOTIFY_WINDOW_HANDLE);
+    m_devNotify = RegisterDeviceNotificationW(m_hwnd, &filter, DEVICE_NOTIFY_WINDOW_HANDLE);
 
     m_controller = std::make_unique<ControllerManager>(
         [this](bool connected, bool gameModeActive, bool vigemMissing) {
-            UpdateTrayIcon(connected, gameModeActive, vigemMissing);
+            m_pendingConnected.store(connected);
+            m_pendingGameModeActive.store(gameModeActive);
+            m_pendingVigemMissing.store(vigemMissing);
+            PostMessageW(m_hwnd, WM_STATE_CHANGED, 0, 0);
         });
 
     LoadSettings();
@@ -132,6 +136,12 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             ShowMainWindow();
         else if (LOWORD(lp) == WM_RBUTTONUP)
             ShowContextMenu();
+        return 0;
+
+    case WM_STATE_CHANGED:
+        UpdateTrayIcon(m_pendingConnected.load(),
+                       m_pendingGameModeActive.load(),
+                       m_pendingVigemMissing.load());
         return 0;
 
     case WM_COMMAND:
@@ -634,9 +644,11 @@ void TrayApp::SetStartupEnabled(bool enabled) {
     if (enabled) {
         wchar_t path[MAX_PATH];
         GetModuleFileNameW(nullptr, path, MAX_PATH);
+        wchar_t quoted[MAX_PATH + 2];
+        swprintf_s(quoted, L"\"%s\"", path);
         RegSetValueExW(key, APP_NAME, 0, REG_SZ,
-                       reinterpret_cast<const BYTE*>(path),
-                       static_cast<DWORD>((wcslen(path) + 1) * sizeof(wchar_t)));
+                       reinterpret_cast<const BYTE*>(quoted),
+                       static_cast<DWORD>((wcslen(quoted) + 1) * sizeof(wchar_t)));
     } else {
         RegDeleteValueW(key, APP_NAME);
     }

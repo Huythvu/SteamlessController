@@ -2,6 +2,7 @@
 #include <Windows.h>
 #include <memory>
 #include <cstdint>
+#include <atomic>
 
 class ControllerManager;
 
@@ -43,7 +44,11 @@ private:
     HICON                              m_iconOn    = nullptr;
     HFONT                              m_font      = nullptr;
     HWND                               m_monitorHwnd = nullptr;
+    HDEVNOTIFY                         m_devNotify = nullptr;
     std::unique_ptr<ControllerManager> m_controller;
+    std::atomic_bool                   m_pendingConnected{false};
+    std::atomic_bool                   m_pendingGameModeActive{false};
+    std::atomic_bool                   m_pendingVigemMissing{false};
 
     // Tray menu command IDs
     static constexpr UINT IDM_OPEN          = 1001;
@@ -73,6 +78,7 @@ private:
     static constexpr UINT IDC_RSTICK        = 2018;
     static constexpr UINT IDC_RSTICK_VAL    = 2019;
 
-    static constexpr UINT WM_TRAY  = WM_APP + 1;
+    static constexpr UINT WM_TRAY          = WM_APP + 1;
+    static constexpr UINT WM_STATE_CHANGED = WM_APP + 2;
     static constexpr UINT TRAY_UID = 1;
 };

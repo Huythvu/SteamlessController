@@ -41,8 +41,8 @@ public:
     void SetLeftStickSensitivity(int pos);  // 1..100
     void SetRightStickSensitivity(int pos); // 1..100
 
-    bool IsConnected()             const { return m_connected; }
-    bool IsGameModeActive()        const { return m_gameModeActive; }
+    bool IsConnected()             const { return m_connected.load(); }
+    bool IsGameModeActive()        const { return m_gameModeActive.load(); }
     bool IsTrackpadMouseEnabled()  const { return m_trackpadMouseEnabled; }
     bool IsBackButtonsEnabled()    const { return m_backButtonsEnabled; }
     bool IsUseLeftTrackpad()       const { return m_useLeftTrackpad; }
@@ -68,8 +68,8 @@ private:
     void ReadLoop();
 
     StateChangedFn                     m_onStateChanged;
-    bool                               m_connected            = false;
-    bool                               m_gameModeActive       = false;
+    std::atomic<bool>                  m_connected{false};
+    std::atomic<bool>                  m_gameModeActive{false};
     bool                               m_trackpadMouseEnabled = false;
     bool                               m_backButtonsEnabled   = false;
     bool                               m_useLeftTrackpad      = false;
@@ -83,6 +83,7 @@ private:
     int                                m_rStickSens           = 50;   // 1..100
     std::unique_ptr<VirtualController> m_virtual;
     TrackpadMouse                      m_trackpad;
+    mutable std::mutex                 m_inputMutex;
     std::thread                        m_readThread;
     std::atomic<bool>                  m_readRunning{false};
 

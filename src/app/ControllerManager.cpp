@@ -33,14 +33,14 @@ ControllerManager::~ControllerManager() {
 }
 
 void ControllerManager::OnDeviceChange() {
-    if (!m_connected)
+    if (!m_connected.load())
         TryOpen();
     else if (!g_ctrl || !g_ctrl->IsStillConnected())
         Close(/*restoreLizard=*/false);
 }
 
 void ControllerManager::EnableGameMode() {
-    if (!m_connected || m_gameModeActive) return;
+    if (!m_connected.load() || m_gameModeActive.load()) return;
     if (!g_ctrl->DisableLizardMode()) return;
 
     m_virtual = std::make_unique<VirtualController>();
@@ -48,56 +48,71 @@ void ControllerManager::EnableGameMode() {
         bool missing = m_virtual->IsDriverMissing();
         m_virtual.reset();
         g_ctrl->EnableLizardMode();
-        if (missing) m_onStateChanged(m_connected, m_gameModeActive, /*vigemMissing=*/true);
+        if (missing) m_onStateChanged(m_connected.load(), m_gameModeActive.load(), /*vigemMissing=*/true);
         return;
     }
     ApplyStickConfigToVirtual();
 
     m_gameModeActive = true;
-    m_trackpad.Reset();
-    m_trackpad.SetTrackpadEnabled(m_trackpadMouseEnabled);
-    m_trackpad.SetBackButtonsEnabled(m_backButtonsEnabled);
-    m_trackpad.SetUseLeftTrackpad(m_useLeftTrackpad);
-    m_trackpad.SetScrollEnabled(m_scrollWheelEnabled);
-    m_trackpad.SetInvertScroll(m_invertScroll);
-    m_trackpad.SetSensitivity(MouseSensFromPos(m_trackpadSensitivity));
-    m_trackpad.SetScrollSensitivity(ScrollSensFromPos(m_scrollSensitivity));
+    {
+        std::lock_guard<std::mutex> lock(m_inputMutex);
+        m_trackpad.Reset();
+        m_trackpad.SetTrackpadEnabled(m_trackpadMouseEnabled);
+        m_trackpad.SetBackButtonsEnabled(m_backButtonsEnabled);
+        m_trackpad.SetUseLeftTrackpad(m_useLeftTrackpad);
+        m_trackpad.SetScrollEnabled(m_scrollWheelEnabled);
+        m_trackpad.SetInvertScroll(m_invertScroll);
+        m_trackpad.SetSensitivity(MouseSensFromPos(m_trackpadSensitivity));
+        m_trackpad.SetScrollSensitivity(ScrollSensFromPos(m_scrollSensitivity));
+    }
     StartReadLoop();
-    m_onStateChanged(m_connected, m_gameModeActive, false);
+    m_onStateChanged(m_connected.load(), m_gameModeActive.load(), false);
 }
 
 void ControllerManager::DisableGameMode() {
-    if (!m_gameModeActive) return;
+    if (!m_gameModeActive.load()) return;
     StopReadLoop();
-    m_trackpad.Reset();
-    m_virtual.reset();
+    {
+        std::lock_guard<std::mutex> lock(m_inputMutex);
+        m_trackpad.Reset();
+        m_virtual.reset();
+    }
     g_ctrl->EnableLizardMode();
     m_gameModeActive = false;
-    m_onStateChanged(m_connected, m_gameModeActive, false);
+    m_onStateChanged(m_connected.load(), m_gameModeActive.load(), false);
 }
 
 void ControllerManager::SetTrackpadMouseEnabled(bool enabled) {
     m_trackpadMouseEnabled = enabled;
+    std::lock_guard<std::mutex> lock(m_inputMutex);
+    if (!enabled) m_trackpad.Reset();
     m_trackpad.SetTrackpadEnabled(enabled);
 }
 
 void ControllerManager::SetBackButtonsEnabled(bool enabled) {
     m_backButtonsEnabled = enabled;
+    std::lock_guard<std::mutex> lock(m_inputMutex);
+    if (!enabled) m_trackpad.Reset();
     m_trackpad.SetBackButtonsEnabled(enabled);
 }
 
 void ControllerManager::SetUseLeftTrackpad(bool enabled) {
     m_useLeftTrackpad = enabled;
+    std::lock_guard<std::mutex> lock(m_inputMutex);
+    m_trackpad.Reset();
     m_trackpad.SetUseLeftTrackpad(enabled);
 }
 
 void ControllerManager::SetScrollWheelEnabled(bool enabled) {
     m_scrollWheelEnabled = enabled;
+    std::lock_guard<std::mutex> lock(m_inputMutex);
+    if (!enabled) m_trackpad.Reset();
     m_trackpad.SetScrollEnabled(enabled);
 }
 
 void ControllerManager::SetInvertScroll(bool enabled) {
     m_invertScroll = enabled;
+    std::lock_guard<std::mutex> lock(m_inputMutex);
     m_trackpad.SetInvertScroll(enabled);
 }
 
@@ -105,6 +120,7 @@ void ControllerManager::SetTrackpadSensitivity(int pos) {
     if (pos < 1)   pos = 1;
     if (pos > 100) pos = 100;
     m_trackpadSensitivity = pos;
+    std::lock_guard<std::mutex> lock(m_inputMutex);
     m_trackpad.SetSensitivity(MouseSensFromPos(pos));
 }
 
@@ -112,6 +128,7 @@ void ControllerManager::SetScrollSensitivity(int pos) {
     if (pos < 1)   pos = 1;
     if (pos > 100) pos = 100;
     m_scrollSensitivity = pos;
+    std::lock_guard<std::mutex> lock(m_inputMutex);
     m_trackpad.SetScrollSensitivity(ScrollSensFromPos(pos));
 }
 
@@ -144,6 +161,7 @@ void ControllerManager::SetRightStickSensitivity(int pos) {
 }
 
 void ControllerManager::ApplyStickConfigToVirtual() {
+    std::lock_guard<std::mutex> lock(m_inputMutex);
     if (!m_virtual) return;
     m_virtual->SetStickConfig(m_lDeadzone / 100.0f, StickExpFromPos(m_lStickSens),
                               m_rDeadzone / 100.0f, StickExpFromPos(m_rStickSens));
@@ -153,24 +171,30 @@ void ControllerManager::TryOpen() {
     if (!g_ctrl) g_ctrl = std::make_unique<SteamController>();
     if (g_ctrl->Open()) {
         m_connected = true;
-        m_onStateChanged(m_connected, m_gameModeActive, false);
+        m_onStateChanged(m_connected.load(), m_gameModeActive.load(), false);
     }
 }
 
 void ControllerManager::Close(bool restoreLizard) {
     StopReadLoop();
-    m_virtual.reset();
+    {
+        std::lock_guard<std::mutex> lock(m_inputMutex);
+        m_trackpad.Reset();
+        m_virtual.reset();
+    }
     if (g_ctrl) {
-        if (restoreLizard && m_gameModeActive)
+        if (restoreLizard && m_gameModeActive.load())
             g_ctrl->EnableLizardMode();
         g_ctrl->Close();
     }
     m_connected      = false;
     m_gameModeActive = false;
-    m_onStateChanged(m_connected, m_gameModeActive, false);
+    m_onStateChanged(m_connected.load(), m_gameModeActive.load(), false);
 }
 
 void ControllerManager::StartReadLoop() {
+    if (m_readThread.joinable())
+        m_readThread.join();
     m_readRunning = true;
     m_readThread  = std::thread(&ControllerManager::ReadLoop, this);
 }
@@ -186,16 +210,21 @@ void ControllerManager::StopReadLoop() {
 
 void ControllerManager::ReadLoop() {
     uint8_t buf[64];
+    bool lost = false;
     while (m_readRunning) {
         bool deviceLost = false;
         size_t n = g_ctrl->ReadReport(buf, sizeof(buf), /*timeoutMs=*/32, &deviceLost);
         // Controller was unplugged: stop reading so we don't spin on a dead
-        // handle. The WM_DEVICECHANGE handler tears the connection down.
-        if (deviceLost) break;
+        // handle. Tear down the virtual device here as a fallback for wireless
+        // dongles that remain present after the controller slot disappears.
+        if (deviceLost) { lost = true; break; }
         if (n == 0) continue;
         if (buf[0] != SteamController::REPORT_STATE) continue;
-        if (m_virtual) m_virtual->Update(buf, n);
-        m_trackpad.Update(buf, n);
+        {
+            std::lock_guard<std::mutex> lock(m_inputMutex);
+            if (m_virtual) m_virtual->Update(buf, n);
+            m_trackpad.Update(buf, n);
+        }
 
         // Publish a snapshot for the live input monitor.
         {
@@ -203,6 +232,19 @@ void ControllerManager::ReadLoop() {
             std::memcpy(m_lastReport, buf, n);
             m_lastReportLen = n;
         }
+    }
+
+    if (lost) {
+        m_readRunning = false;
+        {
+            std::lock_guard<std::mutex> lock(m_inputMutex);
+            m_trackpad.Reset();
+            m_virtual.reset();
+        }
+        if (g_ctrl) g_ctrl->Close();
+        m_connected = false;
+        m_gameModeActive = false;
+        m_onStateChanged(false, false, false);
     }
 }
 
