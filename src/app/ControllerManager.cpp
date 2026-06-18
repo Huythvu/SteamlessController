@@ -114,9 +114,12 @@ void ControllerManager::SetScrollWheelEnabled(bool enabled) {
 
 void ControllerManager::TestHaptic() {
     if (!g_ctrl || !m_connected.load()) return;
-    // Guessed strong-ish parameters; if it buzzes at all we can tune from there.
-    g_ctrl->TriggerHaptic(0, 0x4000, 0x0200, 0x0040);  // right
-    g_ctrl->TriggerHaptic(1, 0x4000, 0x0200, 0x0040);  // left
+    // Replay the patterns captured from Steam: trackpad actuators (0x81) and
+    // rumble motors (0x82), both sides, so we can tell which fires.
+    g_ctrl->TrackpadHaptic(0, 0x0190);
+    g_ctrl->TrackpadHaptic(1, 0x0190);
+    g_ctrl->RumbleHaptic(0, 0xFD);
+    g_ctrl->RumbleHaptic(1, 0xFD);
 }
 
 void ControllerManager::SuspendTrackpad(bool suspended) {

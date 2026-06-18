@@ -115,18 +115,20 @@ bool SteamController::EnableLizardMode() {
 // Haptics (experimental)
 // ---------------------------------------------------------------------------
 
-void SteamController::TriggerHaptic(uint8_t motor, uint16_t amplitude,
-                                    uint16_t period, uint16_t count) {
-    // Legacy SC payload: motor, amplitude (LE), period (LE), repeat count (LE).
-    const uint8_t payload[] = {
-        motor,
+void SteamController::TrackpadHaptic(uint8_t side, uint16_t amplitude) {
+    // Output report 0x81: [id, side, amp_lo, amp_hi, 0, 0, count=1, 0]
+    const uint8_t report[8] = {
+        0x81, side,
         static_cast<uint8_t>(amplitude & 0xFF), static_cast<uint8_t>(amplitude >> 8),
-        static_cast<uint8_t>(period    & 0xFF), static_cast<uint8_t>(period    >> 8),
-        static_cast<uint8_t>(count     & 0xFF), static_cast<uint8_t>(count     >> 8),
+        0x00, 0x00, 0x01, 0x00,
     };
-    uint8_t buf[64];
-    BuildCmd(buf, CMD_TRIGGER_HAPTIC, payload, sizeof(payload));
-    m_device.SendFeatureReport(buf, sizeof(buf));
+    m_device.WriteOutputReport(report, sizeof(report));
+}
+
+void SteamController::RumbleHaptic(uint8_t side, uint8_t intensity) {
+    // Output report 0x82: [id, side, 0x01, intensity]
+    const uint8_t report[4] = { 0x82, side, 0x01, intensity };
+    m_device.WriteOutputReport(report, sizeof(report));
 }
 
 // ---------------------------------------------------------------------------

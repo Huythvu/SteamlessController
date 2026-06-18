@@ -32,6 +32,11 @@ public:
     // This is the command channel the original Steam Controller used for all firmware commands.
     bool SendFeatureReport(const uint8_t* data, size_t size);
 
+    // Write a HID output report to the interrupt OUT endpoint (via WriteFile).
+    // data[0] must be the output report ID. Padded to OutputReportByteLength.
+    // Uses its own event so it is safe to call while a read is in flight.
+    bool WriteOutputReport(const uint8_t* data, size_t size);
+
     ULONG OutputReportByteLength()  const { return m_outputReportLen; }
     ULONG FeatureReportByteLength() const { return m_featureReportLen; }
 

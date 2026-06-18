@@ -23,3 +23,7 @@ CMakeUserPresets.json
 .vs/
 *.user
 *.suo
+
+# USB captures (large, local only)
+wireshark*.txt
+*.pcapng

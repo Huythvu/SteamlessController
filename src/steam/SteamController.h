@@ -126,10 +126,11 @@ public:
     // Restores default mappings. Should be called before process exit.
     bool EnableLizardMode();
 
-    // Fire a haptic pulse on one actuator (motor 0 = right, 1 = left) using the
-    // legacy Steam Controller command. Whether the 2026 firmware honors it is
-    // exactly what we're trying to find out.
-    void TriggerHaptic(uint8_t motor, uint16_t amplitude, uint16_t period, uint16_t count);
+    // Haptics (output reports captured from Steam's own traffic).
+    //   side: 0 / 1 selects the actuator (right / left).
+    // Trackpad actuator pulse (report 0x81); rumble motor (report 0x82).
+    void TrackpadHaptic(uint8_t side, uint16_t amplitude);
+    void RumbleHaptic(uint8_t side, uint8_t intensity);
 
     // Read the next raw input report. buffer[0] = report ID on return.
     // Returns 0 on timeout. If the read fails because the controller was

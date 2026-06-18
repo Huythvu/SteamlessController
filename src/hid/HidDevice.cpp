@@ -189,6 +189,39 @@ bool HidDevice::SendFeatureReport(const uint8_t* data, size_t size) {
     return ok == TRUE;
 }
 
+bool HidDevice::WriteOutputReport(const uint8_t* data, size_t size) {
+    if (m_handle == INVALID_HANDLE_VALUE) return false;
+
+    std::vector<uint8_t> buf(m_outputReportLen, 0);
+    size_t copyLen = size < m_outputReportLen ? size : m_outputReportLen;
+    std::memcpy(buf.data(), data, copyLen);
+
+    // Own event so this doesn't collide with the read loop's overlapped read.
+    HANDLE ev = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    OVERLAPPED ov{};
+    ov.hEvent = ev;
+
+    DWORD written = 0;
+    bool ok = true;
+    if (!WriteFile(m_handle, buf.data(), m_outputReportLen, &written, &ov)) {
+        if (GetLastError() == ERROR_IO_PENDING) {
+            if (WaitForSingleObject(ev, 200) == WAIT_OBJECT_0) {
+                ok = GetOverlappedResult(m_handle, &ov, &written, FALSE) != 0;
+            } else {
+                CancelIoEx(m_handle, &ov);
+                GetOverlappedResult(m_handle, &ov, &written, TRUE);
+                ok = false;
+            }
+        } else {
+            ok = false;
+        }
+    }
+    if (!ok)
+        printf("WriteOutputReport(0x%02X) failed: error %lu\n", data[0], GetLastError());
+    CloseHandle(ev);
+    return ok;
+}
+
 size_t HidDevice::ReadInputReport(uint8_t* buffer, size_t size, uint32_t timeoutMs,
                                   bool* deviceLost) {
     OVERLAPPED ov{};
