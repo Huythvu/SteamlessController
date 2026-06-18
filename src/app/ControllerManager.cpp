@@ -5,6 +5,15 @@
 
 static std::unique_ptr<SteamController> g_ctrl;
 
+// Map a 1..100 slider position to a usable speed. Kept deliberately modest at
+// the top end — the previous 0.1 max was far too fast to be usable.
+static float MouseSensFromPos(int pos) {
+    return 0.002f + (pos - 1) / 99.0f * (0.040f - 0.002f);
+}
+static float ScrollSensFromPos(int pos) {
+    return 0.010f + (pos - 1) / 99.0f * (0.200f - 0.010f);
+}
+
 ControllerManager::ControllerManager(StateChangedFn onStateChanged)
     : m_onStateChanged(std::move(onStateChanged))
 {
@@ -41,7 +50,9 @@ void ControllerManager::EnableGameMode() {
     m_trackpad.SetBackButtonsEnabled(m_backButtonsEnabled);
     m_trackpad.SetUseLeftTrackpad(m_useLeftTrackpad);
     m_trackpad.SetScrollEnabled(m_scrollWheelEnabled);
-    m_trackpad.SetSensitivity(m_trackpadSensitivity / 1000.0f);
+    m_trackpad.SetInvertScroll(m_invertScroll);
+    m_trackpad.SetSensitivity(MouseSensFromPos(m_trackpadSensitivity));
+    m_trackpad.SetScrollSensitivity(ScrollSensFromPos(m_scrollSensitivity));
     StartReadLoop();
     m_onStateChanged(m_connected, m_gameModeActive, false);
 }
@@ -76,11 +87,23 @@ void ControllerManager::SetScrollWheelEnabled(bool enabled) {
     m_trackpad.SetScrollEnabled(enabled);
 }
 
+void ControllerManager::SetInvertScroll(bool enabled) {
+    m_invertScroll = enabled;
+    m_trackpad.SetInvertScroll(enabled);
+}
+
 void ControllerManager::SetTrackpadSensitivity(int pos) {
     if (pos < 1)   pos = 1;
     if (pos > 100) pos = 100;
     m_trackpadSensitivity = pos;
-    m_trackpad.SetSensitivity(pos / 1000.0f);
+    m_trackpad.SetSensitivity(MouseSensFromPos(pos));
+}
+
+void ControllerManager::SetScrollSensitivity(int pos) {
+    if (pos < 1)   pos = 1;
+    if (pos > 100) pos = 100;
+    m_scrollSensitivity = pos;
+    m_trackpad.SetScrollSensitivity(ScrollSensFromPos(pos));
 }
 
 void ControllerManager::TryOpen() {

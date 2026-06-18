@@ -12,7 +12,7 @@ static constexpr wchar_t WNDCLASS_NAME[] = L"SteamlessControllerWindow";
 
 // Main-window client area. Controls are laid out within this.
 static constexpr int WIN_W = 360;
-static constexpr int WIN_H = 350;
+static constexpr int WIN_H = 420;
 
 TrayApp::TrayApp() {
     g_app = this;
@@ -136,6 +136,10 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             m_controller->SetScrollWheelEnabled(IsDlgButtonChecked(hwnd, IDC_SCROLL) == BST_CHECKED);
             SaveSettings();
             break;
+        case IDC_INVERT:
+            m_controller->SetInvertScroll(IsDlgButtonChecked(hwnd, IDC_INVERT) == BST_CHECKED);
+            SaveSettings();
+            break;
         case IDC_BACKBUTTONS:
             m_controller->SetBackButtonsEnabled(IsDlgButtonChecked(hwnd, IDC_BACKBUTTONS) == BST_CHECKED);
             SaveSettings();
@@ -154,14 +158,20 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         return 0;
 
-    case WM_HSCROLL:
-        // The sensitivity trackbar is the only horizontal-scroll source.
-        if (reinterpret_cast<HWND>(lp) == GetDlgItem(hwnd, IDC_SENS)) {
-            int pos = static_cast<int>(SendMessageW(reinterpret_cast<HWND>(lp), TBM_GETPOS, 0, 0));
+    case WM_HSCROLL: {
+        HWND bar = reinterpret_cast<HWND>(lp);
+        int  pos = static_cast<int>(SendMessageW(bar, TBM_GETPOS, 0, 0));
+        if (bar == GetDlgItem(hwnd, IDC_SENS)) {
             m_controller->SetTrackpadSensitivity(pos);
+            SetDlgItemInt(hwnd, IDC_SENS_VAL, static_cast<UINT>(pos), FALSE);
+            SaveSettings();
+        } else if (bar == GetDlgItem(hwnd, IDC_SCROLL_SENS)) {
+            m_controller->SetScrollSensitivity(pos);
+            SetDlgItemInt(hwnd, IDC_SCROLL_VAL, static_cast<UINT>(pos), FALSE);
             SaveSettings();
         }
         return 0;
+    }
 
     case WM_CTLCOLORSTATIC: {
         // Make the status label's background blend with the window.
@@ -208,30 +218,41 @@ void TrayApp::CreateControls(HWND hwnd) {
         return c;
     };
 
-    const int M = 20;          // margin
-    const int W = WIN_W - 2*M; // content width
+    const int M  = 20;            // margin
+    const int W  = WIN_W - 2*M;   // content width
+    const int VW = 36;            // value-label width (right-aligned number)
 
     make(L"STATIC", L"", SS_LEFT,                       M,  15, W, 20, IDC_STATUS);
     make(L"BUTTON", L"Enable Steamless Mode", BS_PUSHBUTTON | WS_TABSTOP,
                                                         M,  45, W, 34, IDC_TOGGLE);
 
-    make(L"STATIC", L"Options", SS_LEFT,               M,  92, W, 18, 0);
+    make(L"STATIC", L"Options", SS_LEFT,               M,  90, W, 18, 0);
     make(L"BUTTON", L"Trackpad Mouse",
-         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 115, W, 22, IDC_TRACKPAD);
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 112, W, 22, IDC_TRACKPAD);
     make(L"BUTTON", L"Left Trackpad Scroll Wheel",
-         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 140, W, 22, IDC_SCROLL);
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 136, W, 22, IDC_SCROLL);
+    make(L"BUTTON", L"Invert Scroll Direction",
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 160, W, 22, IDC_INVERT);
     make(L"BUTTON", L"Back Buttons for Clicking",
-         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 165, W, 22, IDC_BACKBUTTONS);
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 184, W, 22, IDC_BACKBUTTONS);
     make(L"BUTTON", L"Use Left Trackpad Instead",
-         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 190, W, 22, IDC_LEFT_TRACKPAD);
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 208, W, 22, IDC_LEFT_TRACKPAD);
     make(L"BUTTON", L"Start with Windows",
-         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 215, W, 22, IDC_STARTUP);
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 232, W, 22, IDC_STARTUP);
 
-    make(L"STATIC", L"Mouse sensitivity", SS_LEFT,     M, 250, W, 18, 0);
+    make(L"STATIC", L"Mouse sensitivity", SS_LEFT,     M, 266, W - VW, 18, 0);
+    make(L"STATIC", L"", SS_RIGHT,                      M + W - VW, 266, VW, 18, IDC_SENS_VAL);
     HWND tb = make(TRACKBAR_CLASSW, L"", TBS_HORZ | WS_TABSTOP,
-                                                        M, 270, W, 30, IDC_SENS);
+                                                        M, 286, W, 28, IDC_SENS);
     SendMessageW(tb, TBM_SETRANGE, TRUE, MAKELONG(1, 100));
     SendMessageW(tb, TBM_SETPAGESIZE, 0, 10);
+
+    make(L"STATIC", L"Scroll sensitivity", SS_LEFT,    M, 322, W - VW, 18, 0);
+    make(L"STATIC", L"", SS_RIGHT,                      M + W - VW, 322, VW, 18, IDC_SCROLL_VAL);
+    HWND sb = make(TRACKBAR_CLASSW, L"", TBS_HORZ | WS_TABSTOP,
+                                                        M, 342, W, 28, IDC_SCROLL_SENS);
+    SendMessageW(sb, TBM_SETRANGE, TRUE, MAKELONG(1, 100));
+    SendMessageW(sb, TBM_SETPAGESIZE, 0, 10);
 }
 
 void TrayApp::RefreshControls() {
@@ -253,6 +274,8 @@ void TrayApp::RefreshControls() {
                    m_controller->IsTrackpadMouseEnabled() ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(m_hwnd, IDC_SCROLL,
                    m_controller->IsScrollWheelEnabled() ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(m_hwnd, IDC_INVERT,
+                   m_controller->IsInvertScroll() ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(m_hwnd, IDC_BACKBUTTONS,
                    m_controller->IsBackButtonsEnabled() ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(m_hwnd, IDC_LEFT_TRACKPAD,
@@ -260,8 +283,12 @@ void TrayApp::RefreshControls() {
     CheckDlgButton(m_hwnd, IDC_STARTUP,
                    IsStartupEnabled() ? BST_CHECKED : BST_UNCHECKED);
 
-    SendMessageW(GetDlgItem(m_hwnd, IDC_SENS), TBM_SETPOS, TRUE,
-                 m_controller->GetTrackpadSensitivity());
+    int sens = m_controller->GetTrackpadSensitivity();
+    int scroll = m_controller->GetScrollSensitivity();
+    SendMessageW(GetDlgItem(m_hwnd, IDC_SENS),        TBM_SETPOS, TRUE, sens);
+    SendMessageW(GetDlgItem(m_hwnd, IDC_SCROLL_SENS), TBM_SETPOS, TRUE, scroll);
+    SetDlgItemInt(m_hwnd, IDC_SENS_VAL,   static_cast<UINT>(sens),   FALSE);
+    SetDlgItemInt(m_hwnd, IDC_SCROLL_VAL, static_cast<UINT>(scroll), FALSE);
 }
 
 void TrayApp::ShowMainWindow() {
@@ -388,9 +415,11 @@ void TrayApp::LoadSettings() {
 
     m_controller->SetTrackpadMouseEnabled(readBool(L"TrackpadMouse",   false));
     m_controller->SetScrollWheelEnabled  (readBool(L"ScrollWheel",     false));
+    m_controller->SetInvertScroll        (readBool(L"InvertScroll",    false));
     m_controller->SetBackButtonsEnabled  (readBool(L"BackButtons",     false));
     m_controller->SetUseLeftTrackpad     (readBool(L"UseLeftTrackpad", false));
-    m_controller->SetTrackpadSensitivity (static_cast<int>(readDword(L"TrackpadSensitivity", 15)));
+    m_controller->SetTrackpadSensitivity (static_cast<int>(readDword(L"TrackpadSensitivity", 35)));
+    m_controller->SetScrollSensitivity   (static_cast<int>(readDword(L"ScrollSensitivity",   30)));
 
     RegCloseKey(key);
 }
@@ -410,12 +439,16 @@ void TrayApp::SaveSettings() {
 
     writeBool(L"TrackpadMouse",   m_controller->IsTrackpadMouseEnabled());
     writeBool(L"ScrollWheel",     m_controller->IsScrollWheelEnabled());
+    writeBool(L"InvertScroll",    m_controller->IsInvertScroll());
     writeBool(L"BackButtons",     m_controller->IsBackButtonsEnabled());
     writeBool(L"UseLeftTrackpad", m_controller->IsUseLeftTrackpad());
 
-    DWORD sens = static_cast<DWORD>(m_controller->GetTrackpadSensitivity());
-    RegSetValueExW(key, L"TrackpadSensitivity", 0, REG_DWORD,
-                   reinterpret_cast<const BYTE*>(&sens), sizeof(sens));
+    auto writeDword = [&](const wchar_t* name, DWORD val) {
+        RegSetValueExW(key, name, 0, REG_DWORD,
+                       reinterpret_cast<const BYTE*>(&val), sizeof(val));
+    };
+    writeDword(L"TrackpadSensitivity", static_cast<DWORD>(m_controller->GetTrackpadSensitivity()));
+    writeDword(L"ScrollSensitivity",   static_cast<DWORD>(m_controller->GetScrollSensitivity()));
 
     RegCloseKey(key);
 }

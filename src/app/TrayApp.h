@@ -51,6 +51,10 @@ private:
     static constexpr UINT IDC_STARTUP       = 2005;
     static constexpr UINT IDC_SCROLL        = 2006;
     static constexpr UINT IDC_SENS          = 2007;
+    static constexpr UINT IDC_SENS_VAL      = 2008;
+    static constexpr UINT IDC_INVERT        = 2009;
+    static constexpr UINT IDC_SCROLL_SENS   = 2010;
+    static constexpr UINT IDC_SCROLL_VAL    = 2011;
 
     static constexpr UINT WM_TRAY  = WM_APP + 1;
     static constexpr UINT TRAY_UID = 1;

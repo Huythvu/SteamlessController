@@ -4,11 +4,13 @@
 
 class TrackpadMouse {
 public:
-    void SetTrackpadEnabled(bool enabled)     { m_trackpadEnabled    = enabled; }
-    void SetBackButtonsEnabled(bool enabled)  { m_backButtonsEnabled = enabled; }
-    void SetUseLeftTrackpad(bool enabled)     { m_useLeftTrackpad    = enabled; }
-    void SetScrollEnabled(bool enabled)       { m_scrollEnabled      = enabled; }
-    void SetSensitivity(float sensitivity)    { m_sensitivity        = sensitivity; }
+    void SetTrackpadEnabled(bool enabled)        { m_trackpadEnabled    = enabled; }
+    void SetBackButtonsEnabled(bool enabled)     { m_backButtonsEnabled = enabled; }
+    void SetUseLeftTrackpad(bool enabled)        { m_useLeftTrackpad    = enabled; }
+    void SetScrollEnabled(bool enabled)          { m_scrollEnabled      = enabled; }
+    void SetInvertScroll(bool enabled)           { m_invertScroll       = enabled; }
+    void SetSensitivity(float sensitivity)       { m_sensitivity        = sensitivity; }
+    void SetScrollSensitivity(float sensitivity) { m_scrollSensitivity  = sensitivity; }
 
     void Update(const uint8_t* buf, size_t n);
     void Reset();
@@ -21,6 +23,7 @@ private:
     bool     m_backButtonsEnabled = false;
     bool     m_useLeftTrackpad    = false;
     bool     m_scrollEnabled      = false;
+    bool     m_invertScroll       = false;
 
     // Mouse-movement state
     bool     m_touching   = false;
@@ -39,6 +42,6 @@ private:
     bool     m_prevR4     = false;
     bool     m_prevR5     = false;
 
-    float    m_sensitivity = 0.015f;
-    static constexpr float SCROLL_SENSITIVITY = 0.06f;
+    float    m_sensitivity       = 0.015f;
+    float    m_scrollSensitivity = 0.06f;
 };

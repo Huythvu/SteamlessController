@@ -97,7 +97,9 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
         const Pad pad = ReadPad(buf, scrollLeft);
 
         if (pad.touching && m_scrollTouching) {
-            const float fdelta = -(pad.y - m_scrollPrevY) * SCROLL_SENSITIVITY + m_scrollAccum;
+            // Natural direction: finger up scrolls up. Invert flips it.
+            const float dir    = m_invertScroll ? -1.0f : 1.0f;
+            const float fdelta = dir * (pad.y - m_scrollPrevY) * m_scrollSensitivity + m_scrollAccum;
             const int   ticks  = static_cast<int>(fdelta);
             m_scrollAccum = fdelta - ticks;
             if (ticks != 0) {
