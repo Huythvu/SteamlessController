@@ -61,17 +61,6 @@ static XUSB_REPORT Translate(const uint8_t* buf, size_t n, uint16_t buttonBits,
 // VirtualController
 // ---------------------------------------------------------------------------
 
-// This ViGEm version's notification callback carries no user-data pointer, so
-// we route to the single active instance through a file-static pointer.
-static std::atomic<VirtualController*> g_activeVC{nullptr};
-
-// ViGEm calls this (on its own thread) whenever the game changes rumble.
-static VOID X360FeedbackCallback(PVIGEM_CLIENT, PVIGEM_TARGET,
-                                 UCHAR largeMotor, UCHAR smallMotor, UCHAR /*led*/) {
-    if (VirtualController* vc = g_activeVC.load())
-        vc->SetRumble(largeMotor, smallMotor);
-}
-
 VirtualController::VirtualController() {
     m_client = vigem_alloc();
     if (!m_client) { printf("[ViGEm] alloc failed\n"); return; }
@@ -97,20 +86,11 @@ VirtualController::VirtualController() {
         return;
     }
 
-    // Listen for game rumble so we can translate it to controller haptics.
-    g_activeVC.store(this);
-    vigem_target_x360_register_notification(static_cast<PVIGEM_CLIENT>(m_client),
-                                            static_cast<PVIGEM_TARGET>(m_target),
-                                            &X360FeedbackCallback);
-
     printf("[ViGEm] Virtual Xbox 360 controller connected\n");
     m_valid = true;
 }
 
 VirtualController::~VirtualController() {
-    if (m_target)
-        vigem_target_x360_unregister_notification(static_cast<PVIGEM_TARGET>(m_target));
-    g_activeVC.store(nullptr);
     if (m_client && m_target) {
         vigem_target_remove(static_cast<PVIGEM_CLIENT>(m_client),
                             static_cast<PVIGEM_TARGET>(m_target));

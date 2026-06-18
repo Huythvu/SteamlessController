@@ -46,6 +46,7 @@ void TrackpadMouse::Reset() {
     m_scrollTouching = false;
     m_scrollPrevY    = 0;
     m_scrollAccum    = 0.0f;
+    m_moveAccum      = 0.0f;
 }
 
 void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
@@ -64,10 +65,12 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
         const Pad pad = ReadPad(buf, mouseLeft);
 
         if (pad.touching && m_touching) {
+            const int rawdx = pad.x - m_prevX;
+            const int rawdy = pad.y - m_prevY;
             // Accumulate fractional movement so slow, precise motion isn't lost
             // to truncation (a single frame's delta * sensitivity can be < 1px).
-            const float fdx =  (pad.x - m_prevX) * m_sensitivity + m_accumX;
-            const float fdy = -(pad.y - m_prevY) * m_sensitivity + m_accumY;  // up = up
+            const float fdx =  rawdx * m_sensitivity + m_accumX;
+            const float fdy = -rawdy * m_sensitivity + m_accumY;  // up = up
             const int   idx = static_cast<int>(fdx);
             const int   idy = static_cast<int>(fdy);
             m_accumX = fdx - idx;
@@ -80,14 +83,27 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
                 input.mi.dy      = idy;
                 SendInput(1, &input, sizeof(INPUT));
             }
+
+            // Textured "tick" feedback as the cursor moves across the pad.
+            if (m_hapticOnMove) {
+                const int adx = rawdx < 0 ? -rawdx : rawdx;
+                const int ady = rawdy < 0 ? -rawdy : rawdy;
+                m_moveAccum += static_cast<float>(adx + ady);
+                if (m_moveAccum >= 900.0f) {
+                    m_moveAccum = 0.0f;
+                    fireHaptic(mousePadSide(), 320.0f);
+                }
+            }
         }
 
         if (pad.touching) { m_prevX = pad.x; m_prevY = pad.y; }
-        else              { m_accumX = m_accumY = 0.0f; }
+        else              { m_accumX = m_accumY = 0.0f; m_moveAccum = 0.0f; }
         m_touching = pad.touching;
 
         if (pad.clicking != m_prevClick) {
             SendMouseButton(pad.clicking ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP);
+            if (pad.clicking && m_hapticOnClick)
+                fireHaptic(mousePadSide(), 768.0f);   // firm click bump
             m_prevClick = pad.clicking;
         }
     }
@@ -108,6 +124,8 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
                 input.mi.dwFlags   = MOUSEEVENTF_WHEEL;
                 input.mi.mouseData = static_cast<DWORD>(ticks);
                 SendInput(1, &input, sizeof(INPUT));
+                if (m_hapticOnMove)
+                    fireHaptic(scrollPadSide(), 384.0f);
             }
         }
 

@@ -3,7 +3,6 @@
 #include "steam/SteamController.h"
 #include <memory>
 #include <cstring>
-#include <chrono>
 
 static std::unique_ptr<SteamController> g_ctrl;
 
@@ -26,6 +25,10 @@ static float StickExpFromPos(int pos) {
 ControllerManager::ControllerManager(StateChangedFn onStateChanged)
     : m_onStateChanged(std::move(onStateChanged))
 {
+    // Route trackpad haptic pulses to the physical controller.
+    m_trackpad.SetHapticSink([](uint8_t side, uint16_t amp) {
+        if (g_ctrl) g_ctrl->TrackpadHaptic(side, amp);
+    });
     TryOpen();
 }
 
@@ -66,6 +69,9 @@ void ControllerManager::EnableGameMode() {
         m_trackpad.SetInvertScroll(m_invertScroll);
         m_trackpad.SetSensitivity(MouseSensFromPos(m_trackpadSensitivity));
         m_trackpad.SetScrollSensitivity(ScrollSensFromPos(m_scrollSensitivity));
+        m_trackpad.SetHapticOnClick(m_hapticOnClick);
+        m_trackpad.SetHapticOnMove(m_hapticOnMove);
+        m_trackpad.SetHapticIntensity(m_hapticIntensity / 100.0f);
     }
     StartReadLoop();
     m_onStateChanged(m_connected.load(), m_gameModeActive.load(), false);
@@ -113,10 +119,24 @@ void ControllerManager::SetScrollWheelEnabled(bool enabled) {
     m_trackpad.SetScrollEnabled(enabled && !m_trackpadSuspended.load());
 }
 
+void ControllerManager::SetHapticOnClick(bool enabled) {
+    m_hapticOnClick = enabled;
+    std::lock_guard<std::mutex> lock(m_inputMutex);
+    m_trackpad.SetHapticOnClick(enabled);
+}
+
+void ControllerManager::SetHapticOnMove(bool enabled) {
+    m_hapticOnMove = enabled;
+    std::lock_guard<std::mutex> lock(m_inputMutex);
+    m_trackpad.SetHapticOnMove(enabled);
+}
+
 void ControllerManager::SetHapticIntensity(int pos) {
     if (pos < 1)   pos = 1;
     if (pos > 100) pos = 100;
-    m_hapticIntensity.store(pos);
+    m_hapticIntensity = pos;
+    std::lock_guard<std::mutex> lock(m_inputMutex);
+    m_trackpad.SetHapticIntensity(pos / 100.0f);
 }
 
 void ControllerManager::TestHaptic() {
@@ -239,7 +259,6 @@ void ControllerManager::StopReadLoop() {
 void ControllerManager::ReadLoop() {
     uint8_t buf[64];
     bool lost = false;
-    auto lastHaptic = std::chrono::steady_clock::now();
     while (m_readRunning) {
         bool deviceLost = false;
         size_t n = g_ctrl->ReadReport(buf, sizeof(buf), /*timeoutMs=*/32, &deviceLost);
@@ -261,20 +280,6 @@ void ControllerManager::ReadLoop() {
             std::lock_guard<std::mutex> lock(m_reportMutex);
             std::memcpy(m_lastReport, buf, n);
             m_lastReportLen = n;
-        }
-
-        // Translate game rumble into repeated trackpad-haptic pulses.
-        if (m_rumbleEnabled.load() && m_virtual) {
-            uint8_t lvl = m_virtual->RumbleLevel();
-            auto now = std::chrono::steady_clock::now();
-            if (lvl > 0 && now - lastHaptic >= std::chrono::milliseconds(70)) {
-                float scale = (lvl / 255.0f) * (m_hapticIntensity.load() / 100.0f);
-                uint16_t amp = static_cast<uint16_t>(scale * 0x0600);
-                if (amp < 0x0060) amp = 0x0060;   // keep weak rumble perceptible
-                g_ctrl->TrackpadHaptic(0, amp);
-                g_ctrl->TrackpadHaptic(1, amp);
-                lastHaptic = now;
-            }
         }
     }
 

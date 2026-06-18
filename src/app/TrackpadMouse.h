@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <cstddef>
+#include <functional>
 
 class TrackpadMouse {
 public:
@@ -11,6 +12,12 @@ public:
     void SetInvertScroll(bool enabled)           { m_invertScroll       = enabled; }
     void SetSensitivity(float sensitivity)       { m_sensitivity        = sensitivity; }
     void SetScrollSensitivity(float sensitivity) { m_scrollSensitivity  = sensitivity; }
+
+    // Local trackpad haptics. The sink fires a pulse on (side, amplitude).
+    void SetHapticSink(std::function<void(uint8_t, uint16_t)> sink) { m_haptic = std::move(sink); }
+    void SetHapticOnClick(bool enabled)   { m_hapticOnClick = enabled; }
+    void SetHapticOnMove(bool enabled)    { m_hapticOnMove  = enabled; }
+    void SetHapticIntensity(float scale)  { m_hapticScale   = scale; }   // 0..1
 
     void Update(const uint8_t* buf, size_t n);
     void Reset();
@@ -44,4 +51,18 @@ private:
 
     float    m_sensitivity       = 0.015f;
     float    m_scrollSensitivity = 0.06f;
+
+    // Haptics
+    std::function<void(uint8_t, uint16_t)> m_haptic;
+    bool     m_hapticOnClick = false;
+    bool     m_hapticOnMove  = false;
+    float    m_hapticScale   = 0.6f;
+    float    m_moveAccum     = 0.0f;   // distance since last move tick
+
+    // side 0 = right pad, 1 = left pad
+    uint8_t  mousePadSide()  const { return static_cast<uint8_t>(m_useLeftTrackpad ? 1 : 0); }
+    uint8_t  scrollPadSide() const { return static_cast<uint8_t>(m_useLeftTrackpad ? 0 : 1); }
+    void     fireHaptic(uint8_t side, float baseAmp) {
+        if (m_haptic) m_haptic(side, static_cast<uint16_t>(baseAmp * m_hapticScale));
+    }
 };

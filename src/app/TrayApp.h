@@ -90,9 +90,10 @@ private:
     static constexpr UINT IDC_LSTICK_VAL    = 2017;
     static constexpr UINT IDC_RSTICK        = 2018;
     static constexpr UINT IDC_RSTICK_VAL    = 2019;
-    static constexpr UINT IDC_RUMBLE        = 2020;
-    static constexpr UINT IDC_RUMBLE_INT    = 2021;
-    static constexpr UINT IDC_RUMBLE_VAL    = 2022;
+    static constexpr UINT IDC_HAPTIC_CLICK  = 2020;
+    static constexpr UINT IDC_HAPTIC_MOVE   = 2021;
+    static constexpr UINT IDC_HAPTIC_INT    = 2022;
+    static constexpr UINT IDC_HAPTIC_VAL    = 2023;
 
     static constexpr UINT WM_TRAY          = WM_APP + 1;
     static constexpr UINT WM_STATE_CHANGED = WM_APP + 2;

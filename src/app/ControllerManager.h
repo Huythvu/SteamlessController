@@ -63,11 +63,13 @@ public:
     // Experimental: fire a test haptic pulse on both actuators (if connected).
     void TestHaptic();
 
-    // Rumble feedback: translate game rumble to trackpad haptics.
-    void SetRumbleEnabled(bool enabled)  { m_rumbleEnabled.store(enabled); }
+    // Trackpad haptic feedback (on the pad being used).
+    void SetHapticOnClick(bool enabled);
+    void SetHapticOnMove(bool enabled);
     void SetHapticIntensity(int pos);    // 1..100
-    bool IsRumbleEnabled()    const { return m_rumbleEnabled.load(); }
-    int  GetHapticIntensity() const { return m_hapticIntensity.load(); }
+    bool IsHapticOnClick()    const { return m_hapticOnClick; }
+    bool IsHapticOnMove()     const { return m_hapticOnMove; }
+    int  GetHapticIntensity() const { return m_hapticIntensity; }
 
     // Button remapping. Thread-safe (serialized against the read loop).
     void                SetButtonAction(int sourceIndex, InputMapper::Action a);
@@ -95,8 +97,9 @@ private:
     bool                               m_scrollWheelEnabled   = false;
     bool                               m_invertScroll         = false;
     std::atomic<bool>                  m_trackpadSuspended{false};
-    std::atomic<bool>                  m_rumbleEnabled{true};
-    std::atomic<int>                   m_hapticIntensity{60};   // 1..100
+    bool                               m_hapticOnClick        = false;
+    bool                               m_hapticOnMove         = false;
+    int                                m_hapticIntensity      = 60;   // 1..100
     int                                m_trackpadSensitivity  = 35;   // 1..100
     int                                m_scrollSensitivity    = 30;   // 1..100
     int                                m_lDeadzone            = 10;   // 0..90 (%)

@@ -18,7 +18,7 @@ static constexpr wchar_t MAP_CLASS_NAME[] = L"SteamlessControllerMapping";
 
 // Main-window client area. Controls are laid out within this.
 static constexpr int WIN_W = 360;
-static constexpr int WIN_H = 858;
+static constexpr int WIN_H = 884;
 
 // Input-monitor window client area.
 static constexpr int MON_W = 506;
@@ -176,8 +176,12 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case IDC_HAPTIC_TEST:
             m_controller->TestHaptic();
             break;
-        case IDC_RUMBLE:
-            m_controller->SetRumbleEnabled(IsDlgButtonChecked(hwnd, IDC_RUMBLE) == BST_CHECKED);
+        case IDC_HAPTIC_CLICK:
+            m_controller->SetHapticOnClick(IsDlgButtonChecked(hwnd, IDC_HAPTIC_CLICK) == BST_CHECKED);
+            SaveSettings();
+            break;
+        case IDC_HAPTIC_MOVE:
+            m_controller->SetHapticOnMove(IsDlgButtonChecked(hwnd, IDC_HAPTIC_MOVE) == BST_CHECKED);
             SaveSettings();
             break;
         case IDC_TOGGLE:
@@ -233,8 +237,8 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             m_controller->SetLeftStickSensitivity(pos);  valId = IDC_LSTICK_VAL;
         } else if (bar == GetDlgItem(hwnd, IDC_RSTICK)) {
             m_controller->SetRightStickSensitivity(pos); valId = IDC_RSTICK_VAL;
-        } else if (bar == GetDlgItem(hwnd, IDC_RUMBLE_INT)) {
-            m_controller->SetHapticIntensity(pos);       valId = IDC_RUMBLE_VAL;
+        } else if (bar == GetDlgItem(hwnd, IDC_HAPTIC_INT)) {
+            m_controller->SetHapticIntensity(pos);       valId = IDC_HAPTIC_VAL;
         } else {
             return 0;
         }
@@ -336,10 +340,12 @@ void TrayApp::CreateControls(HWND hwnd) {
     make(L"BUTTON", L"Test Haptic", BS_PUSHBUTTON | WS_TABSTOP,
                                                         M, 706, W, 30, IDC_HAPTIC_TEST);
 
-    make(L"STATIC", L"Haptics", SS_LEFT,               M, 748, W, 18, 0);
-    make(L"BUTTON", L"Rumble Feedback (game vibration)",
-         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 770, W, 22, IDC_RUMBLE);
-    slider(L"Rumble intensity", 802, IDC_RUMBLE_INT, IDC_RUMBLE_VAL, 1, 100);
+    make(L"STATIC", L"Trackpad Haptics", SS_LEFT,      M, 748, W, 18, 0);
+    make(L"BUTTON", L"Haptic feedback on click",
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 770, W, 22, IDC_HAPTIC_CLICK);
+    make(L"BUTTON", L"Haptic feedback on movement / scroll",
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 794, W, 22, IDC_HAPTIC_MOVE);
+    slider(L"Haptic intensity", 826, IDC_HAPTIC_INT, IDC_HAPTIC_VAL, 1, 100);
 }
 
 void TrayApp::RefreshControls() {
@@ -369,8 +375,10 @@ void TrayApp::RefreshControls() {
                    m_controller->IsUseLeftTrackpad() ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(m_hwnd, IDC_STARTUP,
                    IsStartupEnabled() ? BST_CHECKED : BST_UNCHECKED);
-    CheckDlgButton(m_hwnd, IDC_RUMBLE,
-                   m_controller->IsRumbleEnabled() ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(m_hwnd, IDC_HAPTIC_CLICK,
+                   m_controller->IsHapticOnClick() ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(m_hwnd, IDC_HAPTIC_MOVE,
+                   m_controller->IsHapticOnMove() ? BST_CHECKED : BST_UNCHECKED);
 
     // Sliders + their numeric readouts.
     auto setSlider = [&](UINT id, UINT valId, int pos) {
@@ -383,7 +391,7 @@ void TrayApp::RefreshControls() {
     setSlider(IDC_RDEADZONE,   IDC_RDEADZONE_VAL, m_controller->GetRightDeadzone());
     setSlider(IDC_LSTICK,      IDC_LSTICK_VAL,    m_controller->GetLeftStickSensitivity());
     setSlider(IDC_RSTICK,      IDC_RSTICK_VAL,    m_controller->GetRightStickSensitivity());
-    setSlider(IDC_RUMBLE_INT,  IDC_RUMBLE_VAL,    m_controller->GetHapticIntensity());
+    setSlider(IDC_HAPTIC_INT,  IDC_HAPTIC_VAL,    m_controller->GetHapticIntensity());
 }
 
 void TrayApp::ShowMainWindow() {
@@ -872,7 +880,8 @@ void TrayApp::LoadSettings() {
     m_controller->SetRightDeadzone       (static_cast<int>(readDword(L"RightDeadzone",        10)));
     m_controller->SetLeftStickSensitivity (static_cast<int>(readDword(L"LeftStickSens",       50)));
     m_controller->SetRightStickSensitivity(static_cast<int>(readDword(L"RightStickSens",      50)));
-    m_controller->SetRumbleEnabled        (readBool(L"RumbleEnabled", true));
+    m_controller->SetHapticOnClick        (readBool(L"HapticOnClick", false));
+    m_controller->SetHapticOnMove         (readBool(L"HapticOnMove",  false));
     m_controller->SetHapticIntensity      (static_cast<int>(readDword(L"HapticIntensity",     60)));
 
     // Button mappings: 0xFFFFFFFF sentinel means "not set" -> keep default.
@@ -909,7 +918,8 @@ void TrayApp::SaveSettings() {
     writeBool(L"InvertScroll",    m_controller->IsInvertScroll());
     writeBool(L"BackButtons",     m_controller->IsBackButtonsEnabled());
     writeBool(L"UseLeftTrackpad", m_controller->IsUseLeftTrackpad());
-    writeBool(L"RumbleEnabled",   m_controller->IsRumbleEnabled());
+    writeBool(L"HapticOnClick",   m_controller->IsHapticOnClick());
+    writeBool(L"HapticOnMove",    m_controller->IsHapticOnMove());
 
     auto writeDword = [&](const wchar_t* name, DWORD val) {
         RegSetValueExW(key, name, 0, REG_DWORD,
