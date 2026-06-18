@@ -18,8 +18,8 @@ static constexpr int WIN_W = 360;
 static constexpr int WIN_H = 690;
 
 // Input-monitor window client area.
-static constexpr int MON_W = 480;
-static constexpr int MON_H = 585;
+static constexpr int MON_W = 506;
+static constexpr int MON_H = 610;
 
 TrayApp::TrayApp() {
     g_app = this;
@@ -289,7 +289,7 @@ void TrayApp::CreateControls(HWND hwnd) {
     make(L"STATIC", L"General", SS_LEFT,               M, 582, W, 18, 0);
     make(L"BUTTON", L"Start with Windows",
          BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 604, W, 22, IDC_STARTUP);
-    make(L"BUTTON", L"Input Monitor…", BS_PUSHBUTTON | WS_TABSTOP,
+    make(L"BUTTON", L"Input Monitor", BS_PUSHBUTTON | WS_TABSTOP,
                                                         M, 634, W, 30, IDC_MONITOR);
 }
 
@@ -455,6 +455,22 @@ void TrayApp::PaintMonitor(HWND hwnd) {
             }
             label(cx - r, cy + r + 3, 2 * r, s);
         };
+        // Rounded-square pad (trackpad): highlights on click, dot tracks touch.
+        auto squarePad = [&](int x, int y, int size, bool clicked, bool active,
+                             int16_t vx, int16_t vy, const wchar_t* s) {
+            HBRUSH ob = static_cast<HBRUSH>(SelectObject(mem, clicked ? onBrush : bodyBrush));
+            RoundRect(mem, x, y, x + size, y + size, 18, 18);
+            SelectObject(mem, ob);
+            if (active) {
+                int half = size / 2 - 10;
+                int dx = x + size / 2 + static_cast<int>(vx / 32767.0f * half);
+                int dy = y + size / 2 - static_cast<int>(vy / 32767.0f * half);
+                HBRUSH o2 = static_cast<HBRUSH>(SelectObject(mem, dotBrush));
+                Ellipse(mem, dx - 9, dy - 9, dx + 9, dy + 9);
+                SelectObject(mem, o2);
+            }
+            label(x, y + size + 4, size, s);
+        };
         // Horizontal trigger bar that fills with travel.
         auto bar = [&](int x, int y, int w, int h, float frac, const wchar_t* s) {
             HBRUSH ob = static_cast<HBRUSH>(SelectObject(mem, offBrush));
@@ -475,48 +491,48 @@ void TrayApp::PaintMonitor(HWND hwnd) {
 
         // --- Controller body ---
         HBRUSH bodyOld = static_cast<HBRUSH>(SelectObject(mem, bodyBrush));
-        RoundRect(mem, 30, 78, 450, 508, 70, 70);
+        RoundRect(mem, 30, 80, 470, 540, 70, 70);
         SelectObject(mem, bodyOld);
 
         // --- Triggers + bumpers across the top ---
-        bar(44, 22, 92, 18, trig(6), L"LT");
-        bar(344, 22, 92, 18, trig(8), L"RT");
-        rrect(44, 46, 92, 24, bit(4, 0x08), L"LB");
-        rrect(344, 46, 92, 24, bit(3, 0x02), L"RB");
+        bar(54, 22, 96, 18, trig(6), L"LT");
+        bar(350, 22, 96, 18, trig(8), L"RT");
+        rrect(54, 46, 96, 24, bit(4, 0x08), L"LB");
+        rrect(350, 46, 96, 24, bit(3, 0x02), L"RB");
 
         // --- D-pad (left) ---
-        rrect(104, 118, 30, 26, bit(3, 0x20), L"Up");
-        rrect(104, 170, 30, 26, bit(3, 0x04), L"Dn");
-        rrect(74,  144, 30, 26, bit(3, 0x10), L"Lt");
-        rrect(134, 144, 30, 26, bit(3, 0x08), L"Rt");
+        rrect(103, 126, 32, 28, bit(3, 0x20), L"Up");
+        rrect(103, 182, 32, 28, bit(3, 0x04), L"Dn");
+        rrect(71,  154, 32, 28, bit(3, 0x10), L"Lt");
+        rrect(135, 154, 32, 28, bit(3, 0x08), L"Rt");
 
         // --- Face buttons A/B/X/Y diamond (right) ---
-        circle(366, 130, 17, bit(2, 0x08), L"Y");
-        circle(366, 184, 17, bit(2, 0x01), L"A");
-        circle(339, 157, 17, bit(2, 0x04), L"X");
-        circle(393, 157, 17, bit(2, 0x02), L"B");
+        circle(382, 132, 18, bit(2, 0x08), L"Y");
+        circle(382, 188, 18, bit(2, 0x01), L"A");
+        circle(353, 160, 18, bit(2, 0x04), L"X");
+        circle(411, 160, 18, bit(2, 0x02), L"B");
 
         // --- Center buttons (View / Steam / Menu) ---
-        circle(212, 150, 13, bit(3, 0x40), L"V");      // View
-        circle(278, 150, 13, bit(2, 0x40), L"M");      // Menu
-        circle(245, 152, 17, bit(4, 0x01), L"S");      // Steam
-        label(195, 174, 100, L"View  Steam  Menu");
+        circle(214, 158, 14, bit(3, 0x40), L"V");      // View
+        circle(286, 158, 14, bit(2, 0x40), L"M");      // Menu
+        circle(250, 160, 18, bit(4, 0x01), L"S");      // Steam
+        label(180, 186, 140, L"View    Steam    Menu");
 
-        // --- Trackpads (signature feature) ---
-        roundPad(120, 280, 58, bit(5, 0x04), bit(5, 0x02), rd16(18), rd16(20), L"Left Trackpad");
-        roundPad(360, 280, 58, bit(4, 0x40), bit(4, 0x20), rd16(24), rd16(26), L"Right Trackpad");
+        // --- Thumbsticks (above the trackpads) ---
+        roundPad(125, 280, 46, bit(3, 0x80), true, rd16(10), rd16(12), L"Left Stick");
+        roundPad(375, 280, 46, bit(2, 0x20), true, rd16(14), rd16(16), L"Right Stick");
 
-        // --- Thumbsticks ---
-        roundPad(120, 410, 44, bit(3, 0x80), true, rd16(10), rd16(12), L"Left Stick");
-        roundPad(360, 410, 44, bit(2, 0x20), true, rd16(14), rd16(16), L"Right Stick");
+        // --- Trackpads (rounded squares, below the sticks) ---
+        squarePad(70,  360, 110, bit(5, 0x04), bit(5, 0x02), rd16(18), rd16(20), L"Left Trackpad");
+        squarePad(320, 360, 110, bit(4, 0x40), bit(4, 0x20), rd16(24), rd16(26), L"Right Trackpad");
 
         // --- Back paddles + grips (physically behind the controller) ---
-        rrect(20,  528, 66, 26, bit(4, 0x02), L"L4");
-        rrect(92,  528, 66, 26, bit(4, 0x04), L"L5");
-        rrect(322, 528, 66, 26, bit(2, 0x80), L"R4");
-        rrect(394, 528, 66, 26, bit(3, 0x01), L"R5");
-        rrect(166, 528, 66, 26, bit(5, 0x20), L"L Grip");
-        rrect(238, 528, 66, 26, bit(5, 0x10), L"R Grip");
+        rrect(16,  560, 74, 26, bit(4, 0x02), L"L4");
+        rrect(96,  560, 74, 26, bit(4, 0x04), L"L5");
+        rrect(176, 560, 74, 26, bit(5, 0x20), L"L Grip");
+        rrect(256, 560, 74, 26, bit(5, 0x10), L"R Grip");
+        rrect(336, 560, 74, 26, bit(2, 0x80), L"R4");
+        rrect(416, 560, 74, 26, bit(3, 0x01), L"R5");
 
         SelectObject(mem, oldPen);
         DeleteObject(outline);
