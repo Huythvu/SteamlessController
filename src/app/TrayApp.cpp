@@ -40,7 +40,7 @@ bool TrayApp::Init(HINSTANCE hInstance) {
     wc.hInstance     = hInstance;
     wc.lpszClassName = WNDCLASS_NAME;
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
-    wc.hCursor       = LoadCursorW(nullptr, IDC_ARROW);
+    wc.hCursor       = LoadCursorW(nullptr, reinterpret_cast<LPCWSTR>(IDC_ARROW));
     wc.hIcon         = m_iconOff;
     wc.hIconSm       = m_iconOff;
     if (!RegisterClassExW(&wc)) return false;
