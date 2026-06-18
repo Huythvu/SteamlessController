@@ -1,0 +1,72 @@
+No.     Time           Source                Destination           Protocol Length Info
+  63666 12.864337      2.5.3                 host                  USB      29     URB_INTERRUPT in
+
+Frame 63666: Packet, 29 bytes on wire (232 bits), 29 bytes captured (232 bits) on interface \\.\USBPcap2, id 0
+    Section number: 1
+    Interface id: 0 (\\.\USBPcap2)
+    Encapsulation type: USB packets with USBPcap header (152)
+    Arrival Time: Jun 18, 2026 17:21:28.941232000 Romance Summer Time
+    UTC Arrival Time: Jun 18, 2026 15:21:28.941232000 UTC
+    Epoch Arrival Time: 1781796088.941232000
+    [Time shift for this packet: 0.000000000 seconds]
+    [Time delta from previous captured frame: 2.000 microseconds]
+    [Time since reference or first frame: 12.864337000 seconds]
+    Frame Number: 63666
+    Frame Length: 29 bytes (232 bits)
+    Capture Length: 29 bytes (232 bits)
+    [Frame is marked: False]
+    [Frame is ignored: False]
+    [Protocols in frame: usb]
+    Character encoding: ASCII (0)
+USB URB
+    [Source: 2.5.3]
+    [Destination: host]
+    USBPcap pseudoheader length: 27
+    IRP ID: 0xffff9e8478770820
+    IRP USBD_STATUS: USBD_STATUS_SUCCESS (0x00000000)
+    URB Function: URB_FUNCTION_BULK_OR_INTERRUPT_TRANSFER (0x0009)
+    IRP information: 0x01, Direction: PDO -> FDO
+    URB bus id: 2
+    Device address: 5
+    Endpoint: 0x83, Direction: IN
+    URB transfer type: URB_INTERRUPT (0x01)
+    Packet Data Length: 2
+    [bInterfaceClass: Audio (0x01)]
+Leftover Capture Data: 8005
+
+No.     Time           Source                Destination           Protocol Length Info
+  63815 12.896334      2.5.3                 host                  USB      29     URB_INTERRUPT in
+
+Frame 63815: Packet, 29 bytes on wire (232 bits), 29 bytes captured (232 bits) on interface \\.\USBPcap2, id 0
+    Section number: 1
+    Interface id: 0 (\\.\USBPcap2)
+    Encapsulation type: USB packets with USBPcap header (152)
+    Arrival Time: Jun 18, 2026 17:21:28.973229000 Romance Summer Time
+    UTC Arrival Time: Jun 18, 2026 15:21:28.973229000 UTC
+    Epoch Arrival Time: 1781796088.973229000
+    [Time shift for this packet: 0.000000000 seconds]
+    [Time delta from previous captured frame: 199.000 microseconds]
+    [Time delta from previous displayed frame: 31.997000 milliseconds]
+    [Time since reference or first frame: 12.896334000 seconds]
+    Frame Number: 63815
+    Frame Length: 29 bytes (232 bits)
+    Capture Length: 29 bytes (232 bits)
+    [Frame is marked: False]
+    [Frame is ignored: False]
+    [Protocols in frame: usb]
+    Character encoding: ASCII (0)
+USB URB
+    [Source: 2.5.3]
+    [Destination: host]
+    USBPcap pseudoheader length: 27
+    IRP ID: 0xffff9e84787b4820
+    IRP USBD_STATUS: USBD_STATUS_SUCCESS (0x00000000)
+    URB Function: URB_FUNCTION_BULK_OR_INTERRUPT_TRANSFER (0x0009)
+    IRP information: 0x01, Direction: PDO -> FDO
+    URB bus id: 2
+    Device address: 5
+    Endpoint: 0x83, Direction: IN
+    URB transfer type: URB_INTERRUPT (0x01)
+    Packet Data Length: 2
+    [bInterfaceClass: Audio (0x01)]
+Leftover Capture Data: 8006
