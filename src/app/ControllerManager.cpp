@@ -3,6 +3,7 @@
 #include "steam/SteamController.h"
 #include <memory>
 #include <cstring>
+#include <chrono>
 
 static std::unique_ptr<SteamController> g_ctrl;
 
@@ -110,6 +111,12 @@ void ControllerManager::SetScrollWheelEnabled(bool enabled) {
     std::lock_guard<std::mutex> lock(m_inputMutex);
     if (!enabled) m_trackpad.Reset();
     m_trackpad.SetScrollEnabled(enabled && !m_trackpadSuspended.load());
+}
+
+void ControllerManager::SetHapticIntensity(int pos) {
+    if (pos < 1)   pos = 1;
+    if (pos > 100) pos = 100;
+    m_hapticIntensity.store(pos);
 }
 
 void ControllerManager::TestHaptic() {
@@ -232,6 +239,7 @@ void ControllerManager::StopReadLoop() {
 void ControllerManager::ReadLoop() {
     uint8_t buf[64];
     bool lost = false;
+    auto lastHaptic = std::chrono::steady_clock::now();
     while (m_readRunning) {
         bool deviceLost = false;
         size_t n = g_ctrl->ReadReport(buf, sizeof(buf), /*timeoutMs=*/32, &deviceLost);
@@ -253,6 +261,20 @@ void ControllerManager::ReadLoop() {
             std::lock_guard<std::mutex> lock(m_reportMutex);
             std::memcpy(m_lastReport, buf, n);
             m_lastReportLen = n;
+        }
+
+        // Translate game rumble into repeated trackpad-haptic pulses.
+        if (m_rumbleEnabled.load() && m_virtual) {
+            uint8_t lvl = m_virtual->RumbleLevel();
+            auto now = std::chrono::steady_clock::now();
+            if (lvl > 0 && now - lastHaptic >= std::chrono::milliseconds(70)) {
+                float scale = (lvl / 255.0f) * (m_hapticIntensity.load() / 100.0f);
+                uint16_t amp = static_cast<uint16_t>(scale * 0x0600);
+                if (amp < 0x0060) amp = 0x0060;   // keep weak rumble perceptible
+                g_ctrl->TrackpadHaptic(0, amp);
+                g_ctrl->TrackpadHaptic(1, amp);
+                lastHaptic = now;
+            }
         }
     }
 
