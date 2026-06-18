@@ -112,6 +112,24 @@ bool SteamController::EnableLizardMode() {
 }
 
 // ---------------------------------------------------------------------------
+// Haptics (experimental)
+// ---------------------------------------------------------------------------
+
+void SteamController::TriggerHaptic(uint8_t motor, uint16_t amplitude,
+                                    uint16_t period, uint16_t count) {
+    // Legacy SC payload: motor, amplitude (LE), period (LE), repeat count (LE).
+    const uint8_t payload[] = {
+        motor,
+        static_cast<uint8_t>(amplitude & 0xFF), static_cast<uint8_t>(amplitude >> 8),
+        static_cast<uint8_t>(period    & 0xFF), static_cast<uint8_t>(period    >> 8),
+        static_cast<uint8_t>(count     & 0xFF), static_cast<uint8_t>(count     >> 8),
+    };
+    uint8_t buf[64];
+    BuildCmd(buf, CMD_TRIGGER_HAPTIC, payload, sizeof(payload));
+    m_device.SendFeatureReport(buf, sizeof(buf));
+}
+
+// ---------------------------------------------------------------------------
 // Input
 // ---------------------------------------------------------------------------
 

@@ -33,6 +33,7 @@ public:
     static constexpr uint8_t CMD_SET_DEFAULT_MAPPINGS   = 0x85;  // ← lizard on
     static constexpr uint8_t CMD_SET_SETTINGS           = 0x87;
     static constexpr uint8_t CMD_GET_SETTINGS           = 0x89;
+    static constexpr uint8_t CMD_TRIGGER_HAPTIC         = 0x8F;  // legacy SC haptic pulse
 
     // Setting key IDs (go in the payload of CMD_SET_SETTINGS)
     static constexpr uint8_t SETTING_RIGHT_TRACKPAD_MODE = 0x07;
@@ -124,6 +125,11 @@ public:
 
     // Restores default mappings. Should be called before process exit.
     bool EnableLizardMode();
+
+    // Fire a haptic pulse on one actuator (motor 0 = right, 1 = left) using the
+    // legacy Steam Controller command. Whether the 2026 firmware honors it is
+    // exactly what we're trying to find out.
+    void TriggerHaptic(uint8_t motor, uint16_t amplitude, uint16_t period, uint16_t count);
 
     // Read the next raw input report. buffer[0] = report ID on return.
     // Returns 0 on timeout. If the read fails because the controller was

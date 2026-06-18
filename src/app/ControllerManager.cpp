@@ -112,6 +112,13 @@ void ControllerManager::SetScrollWheelEnabled(bool enabled) {
     m_trackpad.SetScrollEnabled(enabled && !m_trackpadSuspended.load());
 }
 
+void ControllerManager::TestHaptic() {
+    if (!g_ctrl || !m_connected.load()) return;
+    // Guessed strong-ish parameters; if it buzzes at all we can tune from there.
+    g_ctrl->TriggerHaptic(0, 0x4000, 0x0200, 0x0040);  // right
+    g_ctrl->TriggerHaptic(1, 0x4000, 0x0200, 0x0040);  // left
+}
+
 void ControllerManager::SuspendTrackpad(bool suspended) {
     m_trackpadSuspended.store(suspended);
     std::lock_guard<std::mutex> lock(m_inputMutex);

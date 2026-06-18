@@ -60,6 +60,9 @@ public:
     // input monitor is open) without altering the saved settings.
     void SuspendTrackpad(bool suspended);
 
+    // Experimental: fire a test haptic pulse on both actuators (if connected).
+    void TestHaptic();
+
     // Button remapping. Thread-safe (serialized against the read loop).
     void                SetButtonAction(int sourceIndex, InputMapper::Action a);
     InputMapper::Action GetButtonAction(int sourceIndex) const;

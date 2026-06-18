@@ -62,6 +62,7 @@ private:
     static constexpr UINT IDM_EXIT          = 1002;
     static constexpr UINT IDC_MONITOR       = 1003;
     static constexpr UINT IDC_MAPPING       = 1004;
+    static constexpr UINT IDC_HAPTIC_TEST   = 1005;
     static constexpr UINT MON_TIMER         = 1;
 
     // Mapping window: one combo per source button, plus a reset button.

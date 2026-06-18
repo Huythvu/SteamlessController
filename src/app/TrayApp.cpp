@@ -18,7 +18,7 @@ static constexpr wchar_t MAP_CLASS_NAME[] = L"SteamlessControllerMapping";
 
 // Main-window client area. Controls are laid out within this.
 static constexpr int WIN_W = 360;
-static constexpr int WIN_H = 716;
+static constexpr int WIN_H = 752;
 
 // Input-monitor window client area.
 static constexpr int MON_W = 506;
@@ -173,6 +173,9 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case IDC_MAPPING:
             ShowMapping();
             break;
+        case IDC_HAPTIC_TEST:
+            m_controller->TestHaptic();
+            break;
         case IDC_TOGGLE:
             if (m_controller->IsGameModeActive())
                 m_controller->DisableGameMode();
@@ -324,6 +327,8 @@ void TrayApp::CreateControls(HWND hwnd) {
                                                         M, 634, W, 30, IDC_MONITOR);
     make(L"BUTTON", L"Button Mapping", BS_PUSHBUTTON | WS_TABSTOP,
                                                         M, 670, W, 30, IDC_MAPPING);
+    make(L"BUTTON", L"Test Haptic (experimental)", BS_PUSHBUTTON | WS_TABSTOP,
+                                                        M, 706, W, 30, IDC_HAPTIC_TEST);
 }
 
 void TrayApp::RefreshControls() {
