@@ -2,6 +2,7 @@
 #include "VirtualController.h"
 #include "steam/SteamController.h"
 #include <memory>
+#include <cstring>
 
 static std::unique_ptr<SteamController> g_ctrl;
 
@@ -178,6 +179,9 @@ void ControllerManager::StopReadLoop() {
     m_readRunning = false;
     if (m_readThread.joinable())
         m_readThread.join();
+    // Drop the snapshot so the live monitor stops showing a frozen frame.
+    std::lock_guard<std::mutex> lock(m_reportMutex);
+    m_lastReportLen = 0;
 }
 
 void ControllerManager::ReadLoop() {
@@ -192,5 +196,19 @@ void ControllerManager::ReadLoop() {
         if (buf[0] != SteamController::REPORT_STATE) continue;
         if (m_virtual) m_virtual->Update(buf, n);
         m_trackpad.Update(buf, n);
+
+        // Publish a snapshot for the live input monitor.
+        {
+            std::lock_guard<std::mutex> lock(m_reportMutex);
+            std::memcpy(m_lastReport, buf, n);
+            m_lastReportLen = n;
+        }
     }
+}
+
+size_t ControllerManager::GetLatestReport(uint8_t* out, size_t outSize) const {
+    std::lock_guard<std::mutex> lock(m_reportMutex);
+    size_t len = m_lastReportLen < outSize ? m_lastReportLen : outSize;
+    std::memcpy(out, m_lastReport, len);
+    return len;
 }

@@ -4,6 +4,8 @@
 #include <thread>
 #include <atomic>
 #include <memory>
+#include <mutex>
+#include <cstdint>
 
 class VirtualController;
 
@@ -53,6 +55,10 @@ public:
     int  GetLeftStickSensitivity() const { return m_lStickSens; }
     int  GetRightStickSensitivity()const { return m_rStickSens; }
 
+    // Copy the most recent input report (for the live monitor). Returns the
+    // number of bytes copied, or 0 if none captured yet. Thread-safe.
+    size_t GetLatestReport(uint8_t* out, size_t outSize) const;
+
 private:
     void TryOpen();
     void Close(bool restoreLizard);
@@ -79,4 +85,8 @@ private:
     TrackpadMouse                      m_trackpad;
     std::thread                        m_readThread;
     std::atomic<bool>                  m_readRunning{false};
+
+    mutable std::mutex                 m_reportMutex;
+    uint8_t                            m_lastReport[64] = {};
+    size_t                             m_lastReportLen  = 0;
 };

@@ -5,14 +5,21 @@
 #include <commctrl.h>
 #include <dbt.h>
 #include <winreg.h>
+#include <cstdint>
+#include <cstring>
 
 static TrayApp* g_app = nullptr;
 
 static constexpr wchar_t WNDCLASS_NAME[] = L"SteamlessControllerWindow";
+static constexpr wchar_t MON_CLASS_NAME[] = L"SteamlessControllerMonitor";
 
 // Main-window client area. Controls are laid out within this.
 static constexpr int WIN_W = 360;
-static constexpr int WIN_H = 650;
+static constexpr int WIN_H = 690;
+
+// Input-monitor window client area.
+static constexpr int MON_W = 440;
+static constexpr int MON_H = 490;
 
 TrayApp::TrayApp() {
     g_app = this;
@@ -44,6 +51,17 @@ bool TrayApp::Init(HINSTANCE hInstance) {
     wc.hIcon         = m_iconOff;
     wc.hIconSm       = m_iconOff;
     if (!RegisterClassExW(&wc)) return false;
+
+    WNDCLASSEXW mwc{};
+    mwc.cbSize        = sizeof(mwc);
+    mwc.lpfnWndProc   = MonitorWndProc;
+    mwc.hInstance     = hInstance;
+    mwc.lpszClassName = MON_CLASS_NAME;
+    mwc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
+    mwc.hCursor       = LoadCursorW(nullptr, reinterpret_cast<LPCWSTR>(IDC_ARROW));
+    mwc.hIcon         = m_iconOff;
+    mwc.hIconSm       = m_iconOff;
+    if (!RegisterClassExW(&mwc)) return false;
 
     // Fixed-size window: caption + close + minimize, no resize or maximize.
     DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
@@ -120,6 +138,9 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         switch (LOWORD(wp)) {
         case IDM_OPEN:
             ShowMainWindow();
+            break;
+        case IDC_MONITOR:
+            ShowMonitor();
             break;
         case IDC_TOGGLE:
             if (m_controller->IsGameModeActive())
@@ -268,6 +289,8 @@ void TrayApp::CreateControls(HWND hwnd) {
     make(L"STATIC", L"General", SS_LEFT,               M, 582, W, 18, 0);
     make(L"BUTTON", L"Start with Windows",
          BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 604, W, 22, IDC_STARTUP);
+    make(L"BUTTON", L"Input Monitor…", BS_PUSHBUTTON | WS_TABSTOP,
+                                                        M, 634, W, 30, IDC_MONITOR);
 }
 
 void TrayApp::RefreshControls() {
@@ -315,6 +338,162 @@ void TrayApp::ShowMainWindow() {
     RefreshControls();
     ShowWindow(m_hwnd, SW_SHOW);
     SetForegroundWindow(m_hwnd);
+}
+
+// ---------------------------------------------------------------------------
+// Live input monitor
+// ---------------------------------------------------------------------------
+
+LRESULT CALLBACK TrayApp::MonitorWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    if (g_app) return g_app->HandleMonitorMessage(hwnd, msg, wp, lp);
+    return DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+LRESULT TrayApp::HandleMonitorMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+    case WM_TIMER:
+        if (wp == MON_TIMER) InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
+    case WM_PAINT:
+        PaintMonitor(hwnd);
+        return 0;
+    case WM_CLOSE:
+        KillTimer(hwnd, MON_TIMER);
+        ShowWindow(hwnd, SW_HIDE);
+        return 0;
+    }
+    return DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+void TrayApp::ShowMonitor() {
+    if (!m_monitorHwnd) {
+        DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
+        RECT rc{ 0, 0, MON_W, MON_H };
+        AdjustWindowRect(&rc, style, FALSE);
+        m_monitorHwnd = CreateWindowExW(0, MON_CLASS_NAME, L"Input Monitor", style,
+                                        CW_USEDEFAULT, CW_USEDEFAULT,
+                                        rc.right - rc.left, rc.bottom - rc.top,
+                                        m_hwnd, nullptr, m_hInstance, nullptr);
+        if (!m_monitorHwnd) return;
+    }
+    ShowWindow(m_monitorHwnd, SW_SHOW);
+    SetForegroundWindow(m_monitorHwnd);
+    SetTimer(m_monitorHwnd, MON_TIMER, 33, nullptr);   // ~30 Hz refresh
+}
+
+void TrayApp::PaintMonitor(HWND hwnd) {
+    PAINTSTRUCT ps;
+    HDC hdc = BeginPaint(hwnd, &ps);
+
+    RECT rc;
+    GetClientRect(hwnd, &rc);
+
+    // Double-buffer to avoid flicker on the 30 Hz repaint.
+    HDC     mem = CreateCompatibleDC(hdc);
+    HBITMAP bmp = CreateCompatibleBitmap(hdc, rc.right, rc.bottom);
+    HBITMAP oldBmp = static_cast<HBITMAP>(SelectObject(mem, bmp));
+
+    FillRect(mem, &rc, reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1));
+    SelectObject(mem, m_font);
+    SetBkMode(mem, TRANSPARENT);
+
+    uint8_t buf[64];
+    size_t  n = m_controller ? m_controller->GetLatestReport(buf, sizeof(buf)) : 0;
+
+    if (n < 30) {
+        RECT t = rc;
+        DrawTextW(mem, L"Enable Steamless Mode to see live input.", -1, &t,
+                  DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    } else {
+        HBRUSH onBrush  = CreateSolidBrush(RGB(40, 180, 70));
+        HBRUSH offBrush = CreateSolidBrush(RGB(205, 205, 205));
+        HBRUSH dotBrush = CreateSolidBrush(RGB(40, 120, 220));
+        HBRUSH border   = static_cast<HBRUSH>(GetStockObject(GRAY_BRUSH));
+
+        auto rd16 = [&](int idx) -> int16_t {
+            int16_t v; std::memcpy(&v, buf + idx, 2); return v;
+        };
+
+        // --- Buttons grid ---
+        struct Btn { const wchar_t* name; int byte; uint8_t mask; };
+        static const Btn btns[] = {
+            {L"A", 2, 0x01}, {L"B", 2, 0x02}, {L"X", 2, 0x04}, {L"Y", 2, 0x08}, {L"Steam", 4, 0x01},
+            {L"LB", 4, 0x08}, {L"RB", 3, 0x02}, {L"LS", 3, 0x80}, {L"RS", 2, 0x20}, {L"Menu", 2, 0x40},
+            {L"Up", 3, 0x20}, {L"Down", 3, 0x04}, {L"Left", 3, 0x10}, {L"Right", 3, 0x08}, {L"View", 3, 0x40},
+            {L"L4", 4, 0x02}, {L"L5", 4, 0x04}, {L"R4", 2, 0x80}, {L"R5", 3, 0x01}, {L"", 0, 0},
+            {L"LGrip", 5, 0x20}, {L"RGrip", 5, 0x10}, {L"", 0, 0}, {L"", 0, 0}, {L"", 0, 0},
+        };
+        const int cols = 5, cw = 78, ch = 24, gap = 4, bx = 20, by = 28;
+        for (int i = 0; i < static_cast<int>(sizeof(btns) / sizeof(btns[0])); ++i) {
+            if (!btns[i].name[0]) continue;
+            int x = bx + (i % cols) * (cw + gap);
+            int y = by + (i / cols) * (ch + gap);
+            bool on = (buf[btns[i].byte] & btns[i].mask) != 0;
+            RECT r{ x, y, x + cw, y + ch };
+            FillRect(mem, &r, on ? onBrush : offBrush);
+            FrameRect(mem, &r, border);
+            DrawTextW(mem, btns[i].name, -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        }
+
+        // --- Triggers (vertical bars) ---
+        auto bar = [&](int x, int y, int w, int h, float frac, const wchar_t* label) {
+            RECT r{ x, y, x + w, y + h };
+            FillRect(mem, &r, offBrush);
+            int fh = static_cast<int>(frac * h);
+            RECT fr{ x, y + h - fh, x + w, y + h };
+            FillRect(mem, &fr, onBrush);
+            FrameRect(mem, &r, border);
+            RECT lr{ x - 6, y + h + 2, x + w + 6, y + h + 20 };
+            DrawTextW(mem, label, -1, &lr, DT_CENTER | DT_SINGLELINE);
+        };
+        auto trig = [&](int idx) -> float {
+            int16_t v = rd16(idx);
+            return v <= 0 ? 0.0f : v / 32767.0f;   // int16 max maps to 1.0
+        };
+
+        // --- Sticks / pads (square with a moving dot) ---
+        auto pad = [&](int x, int y, int size, int16_t vx, int16_t vy,
+                       bool active, const wchar_t* label) {
+            RECT r{ x, y, x + size, y + size };
+            FillRect(mem, &r, offBrush);
+            FrameRect(mem, &r, border);
+            RECT vmid{ x, y + size / 2, x + size, y + size / 2 + 1 };
+            FillRect(mem, &vmid, border);
+            RECT hmid{ x + size / 2, y, x + size / 2 + 1, y + size };
+            FillRect(mem, &hmid, border);
+            if (active) {
+                int half = size / 2 - 6;
+                int cx = x + size / 2 + static_cast<int>(vx / 32767.0f * half);
+                int cy = y + size / 2 - static_cast<int>(vy / 32767.0f * half);
+                RECT d{ cx - 5, cy - 5, cx + 5, cy + 5 };
+                FillRect(mem, &d, dotBrush);
+            }
+            RECT lr{ x, y + size + 2, x + size, y + size + 20 };
+            DrawTextW(mem, label, -1, &lr, DT_CENTER | DT_SINGLELINE);
+        };
+
+        const int rowY = 190, boxSz = 110;
+        bar(20,  rowY, 22, boxSz, trig(6), L"LT");
+        pad(54,  rowY, boxSz, rd16(10), rd16(12), true, L"Left Stick");
+        pad(248, rowY, boxSz, rd16(14), rd16(16), true, L"Right Stick");
+        bar(398, rowY, 22, boxSz, trig(8), L"RT");
+
+        const int padY = 350;
+        bool lTouch = (buf[5] & 0x02) != 0;   // BTN_TP_LT
+        bool rTouch = (buf[4] & 0x20) != 0;   // BTN_TP_RT
+        pad(54,  padY, boxSz, rd16(18), rd16(20), lTouch, L"Left Trackpad");
+        pad(248, padY, boxSz, rd16(24), rd16(26), rTouch, L"Right Trackpad");
+
+        DeleteObject(onBrush);
+        DeleteObject(offBrush);
+        DeleteObject(dotBrush);
+    }
+
+    BitBlt(hdc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);
+    SelectObject(mem, oldBmp);
+    DeleteObject(bmp);
+    DeleteDC(mem);
+    EndPaint(hwnd, &ps);
 }
 
 // ---------------------------------------------------------------------------

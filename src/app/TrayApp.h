@@ -1,6 +1,7 @@
 #pragma once
 #include <Windows.h>
 #include <memory>
+#include <cstdint>
 
 class ControllerManager;
 
@@ -15,6 +16,11 @@ public:
 private:
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
     LRESULT HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
+
+    static LRESULT CALLBACK MonitorWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
+    LRESULT HandleMonitorMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
+    void ShowMonitor();
+    void PaintMonitor(HWND hwnd);
 
     void CreateControls(HWND hwnd);
     void RefreshControls();
@@ -36,11 +42,14 @@ private:
     HICON                              m_iconOff   = nullptr;
     HICON                              m_iconOn    = nullptr;
     HFONT                              m_font      = nullptr;
+    HWND                               m_monitorHwnd = nullptr;
     std::unique_ptr<ControllerManager> m_controller;
 
     // Tray menu command IDs
     static constexpr UINT IDM_OPEN          = 1001;
     static constexpr UINT IDM_EXIT          = 1002;
+    static constexpr UINT IDC_MONITOR       = 1003;
+    static constexpr UINT MON_TIMER         = 1;
 
     // Main-window control IDs
     static constexpr UINT IDC_STATUS        = 2000;
