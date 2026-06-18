@@ -56,6 +56,10 @@ public:
     int  GetLeftStickSensitivity() const { return m_lStickSens; }
     int  GetRightStickSensitivity()const { return m_rStickSens; }
 
+    // Temporarily disable trackpad mouse + scroll output (e.g. while the live
+    // input monitor is open) without altering the saved settings.
+    void SuspendTrackpad(bool suspended);
+
     // Button remapping. Thread-safe (serialized against the read loop).
     void                SetButtonAction(int sourceIndex, InputMapper::Action a);
     InputMapper::Action GetButtonAction(int sourceIndex) const;
@@ -81,6 +85,7 @@ private:
     bool                               m_useLeftTrackpad      = false;
     bool                               m_scrollWheelEnabled   = false;
     bool                               m_invertScroll         = false;
+    std::atomic<bool>                  m_trackpadSuspended{false};
     int                                m_trackpadSensitivity  = 35;   // 1..100
     int                                m_scrollSensitivity    = 30;   // 1..100
     int                                m_lDeadzone            = 10;   // 0..90 (%)

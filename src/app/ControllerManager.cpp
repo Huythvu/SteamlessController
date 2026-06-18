@@ -56,11 +56,12 @@ void ControllerManager::EnableGameMode() {
     m_gameModeActive = true;
     {
         std::lock_guard<std::mutex> lock(m_inputMutex);
+        const bool susp = m_trackpadSuspended.load();
         m_trackpad.Reset();
-        m_trackpad.SetTrackpadEnabled(m_trackpadMouseEnabled);
+        m_trackpad.SetTrackpadEnabled(m_trackpadMouseEnabled && !susp);
         m_trackpad.SetBackButtonsEnabled(m_backButtonsEnabled);
         m_trackpad.SetUseLeftTrackpad(m_useLeftTrackpad);
-        m_trackpad.SetScrollEnabled(m_scrollWheelEnabled);
+        m_trackpad.SetScrollEnabled(m_scrollWheelEnabled && !susp);
         m_trackpad.SetInvertScroll(m_invertScroll);
         m_trackpad.SetSensitivity(MouseSensFromPos(m_trackpadSensitivity));
         m_trackpad.SetScrollSensitivity(ScrollSensFromPos(m_scrollSensitivity));
@@ -87,7 +88,7 @@ void ControllerManager::SetTrackpadMouseEnabled(bool enabled) {
     m_trackpadMouseEnabled = enabled;
     std::lock_guard<std::mutex> lock(m_inputMutex);
     if (!enabled) m_trackpad.Reset();
-    m_trackpad.SetTrackpadEnabled(enabled);
+    m_trackpad.SetTrackpadEnabled(enabled && !m_trackpadSuspended.load());
 }
 
 void ControllerManager::SetBackButtonsEnabled(bool enabled) {
@@ -108,7 +109,15 @@ void ControllerManager::SetScrollWheelEnabled(bool enabled) {
     m_scrollWheelEnabled = enabled;
     std::lock_guard<std::mutex> lock(m_inputMutex);
     if (!enabled) m_trackpad.Reset();
-    m_trackpad.SetScrollEnabled(enabled);
+    m_trackpad.SetScrollEnabled(enabled && !m_trackpadSuspended.load());
+}
+
+void ControllerManager::SuspendTrackpad(bool suspended) {
+    m_trackpadSuspended.store(suspended);
+    std::lock_guard<std::mutex> lock(m_inputMutex);
+    m_trackpad.Reset();
+    m_trackpad.SetTrackpadEnabled(m_trackpadMouseEnabled && !suspended);
+    m_trackpad.SetScrollEnabled(m_scrollWheelEnabled && !suspended);
 }
 
 void ControllerManager::SetInvertScroll(bool enabled) {

@@ -370,6 +370,7 @@ LRESULT TrayApp::HandleMonitorMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_CLOSE:
         KillTimer(hwnd, MON_TIMER);
         ShowWindow(hwnd, SW_HIDE);
+        if (m_controller) m_controller->SuspendTrackpad(false);
         return 0;
     }
     return DefWindowProcW(hwnd, msg, wp, lp);
@@ -389,6 +390,9 @@ void TrayApp::ShowMonitor() {
     ShowWindow(m_monitorHwnd, SW_SHOW);
     SetForegroundWindow(m_monitorHwnd);
     SetTimer(m_monitorHwnd, MON_TIMER, 33, nullptr);   // ~30 Hz refresh
+    // Suspend trackpad mouse/scroll so the cursor doesn't fly around while
+    // you exercise the controller in front of the monitor.
+    if (m_controller) m_controller->SuspendTrackpad(true);
 }
 
 void TrayApp::PaintMonitor(HWND hwnd) {
