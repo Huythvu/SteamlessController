@@ -49,6 +49,8 @@ private:
     static constexpr UINT IDC_BACKBUTTONS   = 2003;
     static constexpr UINT IDC_LEFT_TRACKPAD = 2004;
     static constexpr UINT IDC_STARTUP       = 2005;
+    static constexpr UINT IDC_SCROLL        = 2006;
+    static constexpr UINT IDC_SENS          = 2007;
 
     static constexpr UINT WM_TRAY  = WM_APP + 1;
     static constexpr UINT TRAY_UID = 1;

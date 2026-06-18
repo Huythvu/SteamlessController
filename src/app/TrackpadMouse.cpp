@@ -3,13 +3,32 @@
 #include <Windows.h>
 #include <cstring>
 
-static constexpr uint8_t BTN_TP_RT_CLICK = 0x40;  // buf[4] bit 6 — hard press
+static constexpr uint8_t BTN_TP_RT_CLICK = 0x40;  // buf[4] bit 6 — right pad hard press
 
 static void SendMouseButton(DWORD flags) {
     INPUT input{};
     input.type       = INPUT_MOUSE;
     input.mi.dwFlags = flags;
     SendInput(1, &input, sizeof(INPUT));
+}
+
+// Read one trackpad's touch / click / position from a state report.
+TrackpadMouse::Pad TrackpadMouse::ReadPad(const uint8_t* buf, bool left) {
+    Pad p{};
+    const uint8_t b2 = buf[4];
+    const uint8_t b3 = buf[5];
+    if (left) {
+        p.touching = (b3 & SteamController::BTN_TP_LT)       != 0;
+        p.clicking = (b3 & SteamController::BTN_TP_LT_CLICK) != 0;
+        std::memcpy(&p.x, buf + 18, 2);
+        std::memcpy(&p.y, buf + 20, 2);
+    } else {
+        p.touching = (b2 & SteamController::BTN_TP_RT) != 0;
+        p.clicking = (b2 & BTN_TP_RT_CLICK)            != 0;
+        std::memcpy(&p.x, buf + 24, 2);
+        std::memcpy(&p.y, buf + 26, 2);
+    }
+    return p;
 }
 
 void TrackpadMouse::Reset() {
@@ -22,6 +41,11 @@ void TrackpadMouse::Reset() {
     m_prevR5    = false;
     m_prevX     = 0;
     m_prevY     = 0;
+    m_accumX    = 0.0f;
+    m_accumY    = 0.0f;
+    m_scrollTouching = false;
+    m_scrollPrevY    = 0;
+    m_scrollAccum    = 0.0f;
 }
 
 void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
@@ -30,46 +54,64 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
     const uint8_t b0 = buf[2];
     const uint8_t b1 = buf[3];
     const uint8_t b2 = buf[4];
-    const uint8_t b3 = buf[5];
+
+    // The mouse uses one trackpad; the scroll wheel uses the other one.
+    const bool mouseLeft  = m_useLeftTrackpad;
+    const bool scrollLeft = !m_useLeftTrackpad;
 
     // --- Trackpad mouse movement and click ---
     if (m_trackpadEnabled) {
-        const bool touching = m_useLeftTrackpad
-            ? (b3 & SteamController::BTN_TP_LT)       != 0
-            : (b2 & SteamController::BTN_TP_RT)        != 0;
-        const bool clicking = m_useLeftTrackpad
-            ? (b3 & SteamController::BTN_TP_LT_CLICK)  != 0
-            : (b2 & BTN_TP_RT_CLICK)                    != 0;
+        const Pad pad = ReadPad(buf, mouseLeft);
 
-        int16_t x = 0, y = 0;
-        if (m_useLeftTrackpad) {
-            memcpy(&x, buf + 18, 2);
-            memcpy(&y, buf + 20, 2);
-        } else {
-            memcpy(&x, buf + 24, 2);
-            memcpy(&y, buf + 26, 2);
-        }
-
-        if (touching && m_touching) {
-            const int dx =  static_cast<int>(x - m_prevX);
-            const int dy = -static_cast<int>(y - m_prevY);  // negate: up = up
-            if (dx != 0 || dy != 0) {
+        if (pad.touching && m_touching) {
+            // Accumulate fractional movement so slow, precise motion isn't lost
+            // to truncation (a single frame's delta * sensitivity can be < 1px).
+            const float fdx =  (pad.x - m_prevX) * m_sensitivity + m_accumX;
+            const float fdy = -(pad.y - m_prevY) * m_sensitivity + m_accumY;  // up = up
+            const int   idx = static_cast<int>(fdx);
+            const int   idy = static_cast<int>(fdy);
+            m_accumX = fdx - idx;
+            m_accumY = fdy - idy;
+            if (idx != 0 || idy != 0) {
                 INPUT input{};
                 input.type       = INPUT_MOUSE;
                 input.mi.dwFlags = MOUSEEVENTF_MOVE;
-                input.mi.dx      = static_cast<LONG>(dx * SENSITIVITY);
-                input.mi.dy      = static_cast<LONG>(dy * SENSITIVITY);
+                input.mi.dx      = idx;
+                input.mi.dy      = idy;
                 SendInput(1, &input, sizeof(INPUT));
             }
         }
 
-        if (touching) { m_prevX = x; m_prevY = y; }
-        m_touching = touching;
+        if (pad.touching) { m_prevX = pad.x; m_prevY = pad.y; }
+        else              { m_accumX = m_accumY = 0.0f; }
+        m_touching = pad.touching;
 
-        if (clicking != m_prevClick) {
-            SendMouseButton(clicking ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP);
-            m_prevClick = clicking;
+        if (pad.clicking != m_prevClick) {
+            SendMouseButton(pad.clicking ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP);
+            m_prevClick = pad.clicking;
         }
+    }
+
+    // --- Trackpad scroll wheel (vertical) ---
+    if (m_scrollEnabled) {
+        const Pad pad = ReadPad(buf, scrollLeft);
+
+        if (pad.touching && m_scrollTouching) {
+            const float fdelta = -(pad.y - m_scrollPrevY) * SCROLL_SENSITIVITY + m_scrollAccum;
+            const int   ticks  = static_cast<int>(fdelta);
+            m_scrollAccum = fdelta - ticks;
+            if (ticks != 0) {
+                INPUT input{};
+                input.type         = INPUT_MOUSE;
+                input.mi.dwFlags   = MOUSEEVENTF_WHEEL;
+                input.mi.mouseData = static_cast<DWORD>(ticks);
+                SendInput(1, &input, sizeof(INPUT));
+            }
+        }
+
+        if (pad.touching) m_scrollPrevY = pad.y;
+        else              m_scrollAccum = 0.0f;
+        m_scrollTouching = pad.touching;
     }
 
     // --- Back buttons: left side uses L4/L5, right side uses R4/R5 ---

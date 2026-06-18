@@ -29,12 +29,16 @@ public:
     void SetTrackpadMouseEnabled(bool enabled);
     void SetBackButtonsEnabled(bool enabled);
     void SetUseLeftTrackpad(bool enabled);
+    void SetScrollWheelEnabled(bool enabled);
+    void SetTrackpadSensitivity(int pos);   // 1..100
 
     bool IsConnected()             const { return m_connected; }
     bool IsGameModeActive()        const { return m_gameModeActive; }
     bool IsTrackpadMouseEnabled()  const { return m_trackpadMouseEnabled; }
     bool IsBackButtonsEnabled()    const { return m_backButtonsEnabled; }
     bool IsUseLeftTrackpad()       const { return m_useLeftTrackpad; }
+    bool IsScrollWheelEnabled()    const { return m_scrollWheelEnabled; }
+    int  GetTrackpadSensitivity()  const { return m_trackpadSensitivity; }
 
 private:
     void TryOpen();
@@ -49,6 +53,8 @@ private:
     bool                               m_trackpadMouseEnabled = false;
     bool                               m_backButtonsEnabled   = false;
     bool                               m_useLeftTrackpad      = false;
+    bool                               m_scrollWheelEnabled   = false;
+    int                                m_trackpadSensitivity  = 15;   // 1..100
     std::unique_ptr<VirtualController> m_virtual;
     TrackpadMouse                      m_trackpad;
     std::thread                        m_readThread;

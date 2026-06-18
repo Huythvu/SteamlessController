@@ -40,6 +40,8 @@ void ControllerManager::EnableGameMode() {
     m_trackpad.SetTrackpadEnabled(m_trackpadMouseEnabled);
     m_trackpad.SetBackButtonsEnabled(m_backButtonsEnabled);
     m_trackpad.SetUseLeftTrackpad(m_useLeftTrackpad);
+    m_trackpad.SetScrollEnabled(m_scrollWheelEnabled);
+    m_trackpad.SetSensitivity(m_trackpadSensitivity / 1000.0f);
     StartReadLoop();
     m_onStateChanged(m_connected, m_gameModeActive, false);
 }
@@ -67,6 +69,18 @@ void ControllerManager::SetBackButtonsEnabled(bool enabled) {
 void ControllerManager::SetUseLeftTrackpad(bool enabled) {
     m_useLeftTrackpad = enabled;
     m_trackpad.SetUseLeftTrackpad(enabled);
+}
+
+void ControllerManager::SetScrollWheelEnabled(bool enabled) {
+    m_scrollWheelEnabled = enabled;
+    m_trackpad.SetScrollEnabled(enabled);
+}
+
+void ControllerManager::SetTrackpadSensitivity(int pos) {
+    if (pos < 1)   pos = 1;
+    if (pos > 100) pos = 100;
+    m_trackpadSensitivity = pos;
+    m_trackpad.SetSensitivity(pos / 1000.0f);
 }
 
 void ControllerManager::TryOpen() {
