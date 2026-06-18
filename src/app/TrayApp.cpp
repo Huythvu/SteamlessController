@@ -12,7 +12,7 @@ static constexpr wchar_t WNDCLASS_NAME[] = L"SteamlessControllerWindow";
 
 // Main-window client area. Controls are laid out within this.
 static constexpr int WIN_W = 360;
-static constexpr int WIN_H = 420;
+static constexpr int WIN_H = 650;
 
 TrayApp::TrayApp() {
     g_app = this;
@@ -161,15 +161,24 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_HSCROLL: {
         HWND bar = reinterpret_cast<HWND>(lp);
         int  pos = static_cast<int>(SendMessageW(bar, TBM_GETPOS, 0, 0));
+        UINT valId = 0;
         if (bar == GetDlgItem(hwnd, IDC_SENS)) {
-            m_controller->SetTrackpadSensitivity(pos);
-            SetDlgItemInt(hwnd, IDC_SENS_VAL, static_cast<UINT>(pos), FALSE);
-            SaveSettings();
+            m_controller->SetTrackpadSensitivity(pos);   valId = IDC_SENS_VAL;
         } else if (bar == GetDlgItem(hwnd, IDC_SCROLL_SENS)) {
-            m_controller->SetScrollSensitivity(pos);
-            SetDlgItemInt(hwnd, IDC_SCROLL_VAL, static_cast<UINT>(pos), FALSE);
-            SaveSettings();
+            m_controller->SetScrollSensitivity(pos);     valId = IDC_SCROLL_VAL;
+        } else if (bar == GetDlgItem(hwnd, IDC_LDEADZONE)) {
+            m_controller->SetLeftDeadzone(pos);          valId = IDC_LDEADZONE_VAL;
+        } else if (bar == GetDlgItem(hwnd, IDC_RDEADZONE)) {
+            m_controller->SetRightDeadzone(pos);         valId = IDC_RDEADZONE_VAL;
+        } else if (bar == GetDlgItem(hwnd, IDC_LSTICK)) {
+            m_controller->SetLeftStickSensitivity(pos);  valId = IDC_LSTICK_VAL;
+        } else if (bar == GetDlgItem(hwnd, IDC_RSTICK)) {
+            m_controller->SetRightStickSensitivity(pos); valId = IDC_RSTICK_VAL;
+        } else {
+            return 0;
         }
+        SetDlgItemInt(hwnd, valId, static_cast<UINT>(pos), FALSE);
+        SaveSettings();
         return 0;
     }
 
@@ -222,37 +231,43 @@ void TrayApp::CreateControls(HWND hwnd) {
     const int W  = WIN_W - 2*M;   // content width
     const int VW = 36;            // value-label width (right-aligned number)
 
+    // Helper: a labelled slider with a live numeric readout to its right.
+    auto slider = [&](const wchar_t* label, int y, UINT id, UINT valId, int mn, int mx) {
+        make(L"STATIC", label, SS_LEFT,  M,           y, W - VW, 18, 0);
+        make(L"STATIC", L"",   SS_RIGHT, M + W - VW,   y, VW,     18, valId);
+        HWND b = make(TRACKBAR_CLASSW, L"", TBS_HORZ | WS_TABSTOP, M, y + 20, W, 28, id);
+        SendMessageW(b, TBM_SETRANGE, TRUE, MAKELONG(mn, mx));
+        SendMessageW(b, TBM_SETPAGESIZE, 0, 10);
+    };
+
     make(L"STATIC", L"", SS_LEFT,                       M,  15, W, 20, IDC_STATUS);
     make(L"BUTTON", L"Enable Steamless Mode", BS_PUSHBUTTON | WS_TABSTOP,
                                                         M,  45, W, 34, IDC_TOGGLE);
 
-    make(L"STATIC", L"Options", SS_LEFT,               M,  90, W, 18, 0);
+    make(L"STATIC", L"Mouse && Trackpad", SS_LEFT,     M,  86, W, 18, 0);
     make(L"BUTTON", L"Trackpad Mouse",
-         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 112, W, 22, IDC_TRACKPAD);
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 108, W, 22, IDC_TRACKPAD);
     make(L"BUTTON", L"Left Trackpad Scroll Wheel",
-         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 136, W, 22, IDC_SCROLL);
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 132, W, 22, IDC_SCROLL);
     make(L"BUTTON", L"Invert Scroll Direction",
-         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 160, W, 22, IDC_INVERT);
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 156, W, 22, IDC_INVERT);
     make(L"BUTTON", L"Back Buttons for Clicking",
-         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 184, W, 22, IDC_BACKBUTTONS);
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 180, W, 22, IDC_BACKBUTTONS);
     make(L"BUTTON", L"Use Left Trackpad Instead",
-         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 208, W, 22, IDC_LEFT_TRACKPAD);
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 204, W, 22, IDC_LEFT_TRACKPAD);
+
+    slider(L"Mouse sensitivity",  236, IDC_SENS,        IDC_SENS_VAL,   1, 100);
+    slider(L"Scroll sensitivity", 290, IDC_SCROLL_SENS, IDC_SCROLL_VAL, 1, 100);
+
+    make(L"STATIC", L"Sticks", SS_LEFT,                M, 344, W, 18, 0);
+    slider(L"Left stick deadzone (%)",   366, IDC_LDEADZONE, IDC_LDEADZONE_VAL, 0, 90);
+    slider(L"Right stick deadzone (%)",  420, IDC_RDEADZONE, IDC_RDEADZONE_VAL, 0, 90);
+    slider(L"Left stick sensitivity",    474, IDC_LSTICK,    IDC_LSTICK_VAL,    1, 100);
+    slider(L"Right stick sensitivity",   528, IDC_RSTICK,    IDC_RSTICK_VAL,    1, 100);
+
+    make(L"STATIC", L"General", SS_LEFT,               M, 582, W, 18, 0);
     make(L"BUTTON", L"Start with Windows",
-         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 232, W, 22, IDC_STARTUP);
-
-    make(L"STATIC", L"Mouse sensitivity", SS_LEFT,     M, 266, W - VW, 18, 0);
-    make(L"STATIC", L"", SS_RIGHT,                      M + W - VW, 266, VW, 18, IDC_SENS_VAL);
-    HWND tb = make(TRACKBAR_CLASSW, L"", TBS_HORZ | WS_TABSTOP,
-                                                        M, 286, W, 28, IDC_SENS);
-    SendMessageW(tb, TBM_SETRANGE, TRUE, MAKELONG(1, 100));
-    SendMessageW(tb, TBM_SETPAGESIZE, 0, 10);
-
-    make(L"STATIC", L"Scroll sensitivity", SS_LEFT,    M, 322, W - VW, 18, 0);
-    make(L"STATIC", L"", SS_RIGHT,                      M + W - VW, 322, VW, 18, IDC_SCROLL_VAL);
-    HWND sb = make(TRACKBAR_CLASSW, L"", TBS_HORZ | WS_TABSTOP,
-                                                        M, 342, W, 28, IDC_SCROLL_SENS);
-    SendMessageW(sb, TBM_SETRANGE, TRUE, MAKELONG(1, 100));
-    SendMessageW(sb, TBM_SETPAGESIZE, 0, 10);
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 604, W, 22, IDC_STARTUP);
 }
 
 void TrayApp::RefreshControls() {
@@ -283,12 +298,17 @@ void TrayApp::RefreshControls() {
     CheckDlgButton(m_hwnd, IDC_STARTUP,
                    IsStartupEnabled() ? BST_CHECKED : BST_UNCHECKED);
 
-    int sens = m_controller->GetTrackpadSensitivity();
-    int scroll = m_controller->GetScrollSensitivity();
-    SendMessageW(GetDlgItem(m_hwnd, IDC_SENS),        TBM_SETPOS, TRUE, sens);
-    SendMessageW(GetDlgItem(m_hwnd, IDC_SCROLL_SENS), TBM_SETPOS, TRUE, scroll);
-    SetDlgItemInt(m_hwnd, IDC_SENS_VAL,   static_cast<UINT>(sens),   FALSE);
-    SetDlgItemInt(m_hwnd, IDC_SCROLL_VAL, static_cast<UINT>(scroll), FALSE);
+    // Sliders + their numeric readouts.
+    auto setSlider = [&](UINT id, UINT valId, int pos) {
+        SendMessageW(GetDlgItem(m_hwnd, id), TBM_SETPOS, TRUE, pos);
+        SetDlgItemInt(m_hwnd, valId, static_cast<UINT>(pos), FALSE);
+    };
+    setSlider(IDC_SENS,        IDC_SENS_VAL,      m_controller->GetTrackpadSensitivity());
+    setSlider(IDC_SCROLL_SENS, IDC_SCROLL_VAL,    m_controller->GetScrollSensitivity());
+    setSlider(IDC_LDEADZONE,   IDC_LDEADZONE_VAL, m_controller->GetLeftDeadzone());
+    setSlider(IDC_RDEADZONE,   IDC_RDEADZONE_VAL, m_controller->GetRightDeadzone());
+    setSlider(IDC_LSTICK,      IDC_LSTICK_VAL,    m_controller->GetLeftStickSensitivity());
+    setSlider(IDC_RSTICK,      IDC_RSTICK_VAL,    m_controller->GetRightStickSensitivity());
 }
 
 void TrayApp::ShowMainWindow() {
@@ -420,6 +440,10 @@ void TrayApp::LoadSettings() {
     m_controller->SetUseLeftTrackpad     (readBool(L"UseLeftTrackpad", false));
     m_controller->SetTrackpadSensitivity (static_cast<int>(readDword(L"TrackpadSensitivity", 35)));
     m_controller->SetScrollSensitivity   (static_cast<int>(readDword(L"ScrollSensitivity",   30)));
+    m_controller->SetLeftDeadzone        (static_cast<int>(readDword(L"LeftDeadzone",         10)));
+    m_controller->SetRightDeadzone       (static_cast<int>(readDword(L"RightDeadzone",        10)));
+    m_controller->SetLeftStickSensitivity (static_cast<int>(readDword(L"LeftStickSens",       50)));
+    m_controller->SetRightStickSensitivity(static_cast<int>(readDword(L"RightStickSens",      50)));
 
     RegCloseKey(key);
 }
@@ -449,6 +473,10 @@ void TrayApp::SaveSettings() {
     };
     writeDword(L"TrackpadSensitivity", static_cast<DWORD>(m_controller->GetTrackpadSensitivity()));
     writeDword(L"ScrollSensitivity",   static_cast<DWORD>(m_controller->GetScrollSensitivity()));
+    writeDword(L"LeftDeadzone",        static_cast<DWORD>(m_controller->GetLeftDeadzone()));
+    writeDword(L"RightDeadzone",       static_cast<DWORD>(m_controller->GetRightDeadzone()));
+    writeDword(L"LeftStickSens",       static_cast<DWORD>(m_controller->GetLeftStickSensitivity()));
+    writeDword(L"RightStickSens",      static_cast<DWORD>(m_controller->GetRightStickSensitivity()));
 
     RegCloseKey(key);
 }

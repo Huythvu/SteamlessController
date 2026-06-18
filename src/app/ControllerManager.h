@@ -34,6 +34,11 @@ public:
     void SetTrackpadSensitivity(int pos);   // 1..100
     void SetScrollSensitivity(int pos);     // 1..100
 
+    void SetLeftDeadzone(int pos);          // 0..90
+    void SetRightDeadzone(int pos);         // 0..90
+    void SetLeftStickSensitivity(int pos);  // 1..100
+    void SetRightStickSensitivity(int pos); // 1..100
+
     bool IsConnected()             const { return m_connected; }
     bool IsGameModeActive()        const { return m_gameModeActive; }
     bool IsTrackpadMouseEnabled()  const { return m_trackpadMouseEnabled; }
@@ -43,10 +48,15 @@ public:
     bool IsInvertScroll()          const { return m_invertScroll; }
     int  GetTrackpadSensitivity()  const { return m_trackpadSensitivity; }
     int  GetScrollSensitivity()    const { return m_scrollSensitivity; }
+    int  GetLeftDeadzone()         const { return m_lDeadzone; }
+    int  GetRightDeadzone()        const { return m_rDeadzone; }
+    int  GetLeftStickSensitivity() const { return m_lStickSens; }
+    int  GetRightStickSensitivity()const { return m_rStickSens; }
 
 private:
     void TryOpen();
     void Close(bool restoreLizard);
+    void ApplyStickConfigToVirtual();
     void StartReadLoop();
     void StopReadLoop();
     void ReadLoop();
@@ -61,6 +71,10 @@ private:
     bool                               m_invertScroll         = false;
     int                                m_trackpadSensitivity  = 35;   // 1..100
     int                                m_scrollSensitivity    = 30;   // 1..100
+    int                                m_lDeadzone            = 10;   // 0..90 (%)
+    int                                m_rDeadzone            = 10;   // 0..90 (%)
+    int                                m_lStickSens           = 50;   // 1..100
+    int                                m_rStickSens           = 50;   // 1..100
     std::unique_ptr<VirtualController> m_virtual;
     TrackpadMouse                      m_trackpad;
     std::thread                        m_readThread;

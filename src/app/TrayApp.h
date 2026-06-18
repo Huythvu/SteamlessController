@@ -55,6 +55,14 @@ private:
     static constexpr UINT IDC_INVERT        = 2009;
     static constexpr UINT IDC_SCROLL_SENS   = 2010;
     static constexpr UINT IDC_SCROLL_VAL    = 2011;
+    static constexpr UINT IDC_LDEADZONE     = 2012;
+    static constexpr UINT IDC_LDEADZONE_VAL = 2013;
+    static constexpr UINT IDC_RDEADZONE     = 2014;
+    static constexpr UINT IDC_RDEADZONE_VAL = 2015;
+    static constexpr UINT IDC_LSTICK        = 2016;
+    static constexpr UINT IDC_LSTICK_VAL    = 2017;
+    static constexpr UINT IDC_RSTICK        = 2018;
+    static constexpr UINT IDC_RSTICK_VAL    = 2019;
 
     static constexpr UINT WM_TRAY  = WM_APP + 1;
     static constexpr UINT TRAY_UID = 1;

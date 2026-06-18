@@ -14,6 +14,13 @@ static float ScrollSensFromPos(int pos) {
     return 0.010f + (pos - 1) / 99.0f * (0.200f - 0.010f);
 }
 
+// Map a 1..100 stick-sensitivity position to a response-curve exponent:
+// 50 = linear, lower = gentler near center, higher = more aggressive.
+static float StickExpFromPos(int pos) {
+    if (pos <= 50) return 2.0f + (pos - 1)  / 49.0f * (1.0f - 2.0f);  // 1→2.0, 50→1.0
+    return                1.0f + (pos - 50) / 50.0f * (0.4f - 1.0f);  // 50→1.0, 100→0.4
+}
+
 ControllerManager::ControllerManager(StateChangedFn onStateChanged)
     : m_onStateChanged(std::move(onStateChanged))
 {
@@ -43,6 +50,7 @@ void ControllerManager::EnableGameMode() {
         if (missing) m_onStateChanged(m_connected, m_gameModeActive, /*vigemMissing=*/true);
         return;
     }
+    ApplyStickConfigToVirtual();
 
     m_gameModeActive = true;
     m_trackpad.Reset();
@@ -104,6 +112,40 @@ void ControllerManager::SetScrollSensitivity(int pos) {
     if (pos > 100) pos = 100;
     m_scrollSensitivity = pos;
     m_trackpad.SetScrollSensitivity(ScrollSensFromPos(pos));
+}
+
+void ControllerManager::SetLeftDeadzone(int pos) {
+    if (pos < 0)  pos = 0;
+    if (pos > 90) pos = 90;
+    m_lDeadzone = pos;
+    ApplyStickConfigToVirtual();
+}
+
+void ControllerManager::SetRightDeadzone(int pos) {
+    if (pos < 0)  pos = 0;
+    if (pos > 90) pos = 90;
+    m_rDeadzone = pos;
+    ApplyStickConfigToVirtual();
+}
+
+void ControllerManager::SetLeftStickSensitivity(int pos) {
+    if (pos < 1)   pos = 1;
+    if (pos > 100) pos = 100;
+    m_lStickSens = pos;
+    ApplyStickConfigToVirtual();
+}
+
+void ControllerManager::SetRightStickSensitivity(int pos) {
+    if (pos < 1)   pos = 1;
+    if (pos > 100) pos = 100;
+    m_rStickSens = pos;
+    ApplyStickConfigToVirtual();
+}
+
+void ControllerManager::ApplyStickConfigToVirtual() {
+    if (!m_virtual) return;
+    m_virtual->SetStickConfig(m_lDeadzone / 100.0f, StickExpFromPos(m_lStickSens),
+                              m_rDeadzone / 100.0f, StickExpFromPos(m_rStickSens));
 }
 
 void ControllerManager::TryOpen() {
