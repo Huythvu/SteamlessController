@@ -345,7 +345,7 @@ void TrayApp::CreateControls(HWND hwnd) {
          BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 770, W, 22, IDC_HAPTIC_CLICK);
     make(L"BUTTON", L"Haptic feedback on movement / scroll",
          BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 794, W, 22, IDC_HAPTIC_MOVE);
-    slider(L"Haptic intensity", 826, IDC_HAPTIC_INT, IDC_HAPTIC_VAL, 1, 100);
+    slider(L"Movement tick density", 826, IDC_HAPTIC_INT, IDC_HAPTIC_VAL, 1, 100);
 }
 
 void TrayApp::RefreshControls() {

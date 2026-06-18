@@ -15,6 +15,12 @@ static float ScrollSensFromPos(int pos) {
     return 0.010f + (pos - 1) / 99.0f * (0.200f - 0.010f);
 }
 
+// Haptic "density": higher slider = more ticks per movement = shorter distance
+// between ticks. 1 -> very sparse, 100 -> dense.
+static float MoveTickFromPos(int pos) {
+    return 8000.0f - (pos - 1) / 99.0f * (8000.0f - 600.0f);
+}
+
 // Map a 1..100 stick-sensitivity position to a response-curve exponent:
 // 50 = linear, lower = gentler near center, higher = more aggressive.
 static float StickExpFromPos(int pos) {
@@ -71,7 +77,7 @@ void ControllerManager::EnableGameMode() {
         m_trackpad.SetScrollSensitivity(ScrollSensFromPos(m_scrollSensitivity));
         m_trackpad.SetHapticOnClick(m_hapticOnClick);
         m_trackpad.SetHapticOnMove(m_hapticOnMove);
-        m_trackpad.SetHapticIntensity(m_hapticIntensity / 100.0f);
+        m_trackpad.SetMoveTickDistance(MoveTickFromPos(m_hapticIntensity));
     }
     StartReadLoop();
     m_onStateChanged(m_connected.load(), m_gameModeActive.load(), false);
@@ -136,7 +142,7 @@ void ControllerManager::SetHapticIntensity(int pos) {
     if (pos > 100) pos = 100;
     m_hapticIntensity = pos;
     std::lock_guard<std::mutex> lock(m_inputMutex);
-    m_trackpad.SetHapticIntensity(pos / 100.0f);
+    m_trackpad.SetMoveTickDistance(MoveTickFromPos(pos));
 }
 
 void ControllerManager::TestHaptic() {

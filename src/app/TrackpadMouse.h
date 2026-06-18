@@ -15,9 +15,9 @@ public:
 
     // Local trackpad haptics. The sink fires a pulse on (side, amplitude).
     void SetHapticSink(std::function<void(uint8_t, uint16_t)> sink) { m_haptic = std::move(sink); }
-    void SetHapticOnClick(bool enabled)   { m_hapticOnClick = enabled; }
-    void SetHapticOnMove(bool enabled)    { m_hapticOnMove  = enabled; }
-    void SetHapticIntensity(float scale)  { m_hapticScale   = scale; }   // 0..1
+    void SetHapticOnClick(bool enabled)    { m_hapticOnClick = enabled; }
+    void SetHapticOnMove(bool enabled)     { m_hapticOnMove  = enabled; }
+    void SetMoveTickDistance(float dist)   { m_moveTickDistance = dist; }   // trackpad units / tick
 
     void Update(const uint8_t* buf, size_t n);
     void Reset();
@@ -54,15 +54,22 @@ private:
 
     // Haptics
     std::function<void(uint8_t, uint16_t)> m_haptic;
-    bool     m_hapticOnClick = false;
-    bool     m_hapticOnMove  = false;
-    float    m_hapticScale   = 0.6f;
-    float    m_moveAccum     = 0.0f;   // distance since last move tick
+    bool     m_hapticOnClick    = false;
+    bool     m_hapticOnMove     = false;
+    float    m_moveTickDistance = 3000.0f;   // smaller = more ticks per movement
+    float    m_moveAccum        = 0.0f;      // distance since last move tick
+
+    // Fixed pulse strengths (amplitude is barely perceptible, so density is
+    // the user-facing control; these just need to be "felt").
+    static constexpr float HAPTIC_CLICK  = 700.0f;
+    static constexpr float HAPTIC_MOVE   = 600.0f;
+    static constexpr float HAPTIC_SCROLL = 700.0f;
+    static constexpr int   MOVE_JITTER   = 50;   // ignore deltas below this (resting jitter)
 
     // side 0 = right pad, 1 = left pad
     uint8_t  mousePadSide()  const { return static_cast<uint8_t>(m_useLeftTrackpad ? 1 : 0); }
     uint8_t  scrollPadSide() const { return static_cast<uint8_t>(m_useLeftTrackpad ? 0 : 1); }
-    void     fireHaptic(uint8_t side, float baseAmp) {
-        if (m_haptic) m_haptic(side, static_cast<uint16_t>(baseAmp * m_hapticScale));
+    void     fireHaptic(uint8_t side, float amp) {
+        if (m_haptic) m_haptic(side, static_cast<uint16_t>(amp));
     }
 };

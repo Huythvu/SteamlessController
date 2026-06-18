@@ -85,13 +85,17 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
             }
 
             // Textured "tick" feedback as the cursor moves across the pad.
+            // A small deadzone keeps a resting finger's jitter from ticking.
             if (m_hapticOnMove) {
                 const int adx = rawdx < 0 ? -rawdx : rawdx;
                 const int ady = rawdy < 0 ? -rawdy : rawdy;
-                m_moveAccum += static_cast<float>(adx + ady);
-                if (m_moveAccum >= 900.0f) {
-                    m_moveAccum = 0.0f;
-                    fireHaptic(mousePadSide(), 320.0f);
+                const int dist = adx + ady;
+                if (dist > MOVE_JITTER) {
+                    m_moveAccum += static_cast<float>(dist);
+                    if (m_moveAccum >= m_moveTickDistance) {
+                        m_moveAccum = 0.0f;
+                        fireHaptic(mousePadSide(), HAPTIC_MOVE);
+                    }
                 }
             }
         }
@@ -102,8 +106,9 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
 
         if (pad.clicking != m_prevClick) {
             SendMouseButton(pad.clicking ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP);
-            if (pad.clicking && m_hapticOnClick)
-                fireHaptic(mousePadSide(), 768.0f);   // firm click bump
+            // Fire on both press and release for a tactile "two-way" click.
+            if (m_hapticOnClick)
+                fireHaptic(mousePadSide(), HAPTIC_CLICK);
             m_prevClick = pad.clicking;
         }
     }
@@ -125,7 +130,7 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
                 input.mi.mouseData = static_cast<DWORD>(ticks);
                 SendInput(1, &input, sizeof(INPUT));
                 if (m_hapticOnMove)
-                    fireHaptic(scrollPadSide(), 384.0f);
+                    fireHaptic(scrollPadSide(), HAPTIC_SCROLL);
             }
         }
 
