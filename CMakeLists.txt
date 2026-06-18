@@ -59,7 +59,7 @@ add_executable(SteamlessController WIN32
 target_include_directories(SteamlessController PRIVATE resources)
 target_link_libraries(SteamlessController PRIVATE SteamController ViGEmClient comctl32)
 if (MSVC)
-    target_compile_options(SteamlessController PRIVATE /W4 /WX /utf-8)
+    target_compile_options(SteamlessController PRIVATE /W4 /WX)
     # We embed our own manifest via app.rc; stop the linker generating a
     # second one (otherwise: "duplicate resource type:MANIFEST name:1").
     target_link_options(SteamlessController PRIVATE /MANIFEST:NO)

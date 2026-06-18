@@ -589,9 +589,9 @@ void TrayApp::UpdateTrayIcon(bool connected, bool gameModeActive, bool vigemMiss
     if (vigemMissing) { ShowViGEmBalloon(); return; }
     bool gameModeOn = gameModeActive;
 
-    const wchar_t* tip = gameModeOn  ? L"Steamless Controller — Steamless Mode ON"
-                       : connected   ? L"Steamless Controller — Connected (Steamless Mode OFF)"
-                                     : L"Steamless Controller — No controller found";
+    const wchar_t* tip = gameModeOn  ? L"Steamless Controller - Steamless Mode ON"
+                       : connected   ? L"Steamless Controller - Connected (Steamless Mode OFF)"
+                                     : L"Steamless Controller - No controller found";
 
     NOTIFYICONDATAW nid{};
     nid.cbSize = sizeof(nid);
