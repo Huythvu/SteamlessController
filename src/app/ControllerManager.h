@@ -36,6 +36,8 @@ public:
     void SetInvertScroll(bool enabled);
     void SetTrackpadSensitivity(int pos);   // 1..100
     void SetScrollSensitivity(int pos);     // 1..100
+    void SetMouseDeadzone(int units);       // 0..500
+    void SetScrollDeadzone(int units);      // 0..500
 
     void SetLeftDeadzone(int pos);          // 0..90
     void SetRightDeadzone(int pos);         // 0..90
@@ -51,6 +53,8 @@ public:
     bool IsInvertScroll()          const { return m_invertScroll; }
     int  GetTrackpadSensitivity()  const { return m_trackpadSensitivity; }
     int  GetScrollSensitivity()    const { return m_scrollSensitivity; }
+    int  GetMouseDeadzone()        const { return m_mouseDeadzone; }
+    int  GetScrollDeadzone()       const { return m_scrollDeadzone; }
     int  GetLeftDeadzone()         const { return m_lDeadzone; }
     int  GetRightDeadzone()        const { return m_rDeadzone; }
     int  GetLeftStickSensitivity() const { return m_lStickSens; }
@@ -102,6 +106,8 @@ private:
     int                                m_hapticIntensity      = 60;   // 1..100
     int                                m_trackpadSensitivity  = 35;   // 1..100
     int                                m_scrollSensitivity    = 30;   // 1..100
+    int                                m_mouseDeadzone        = 20;   // 0..500
+    int                                m_scrollDeadzone       = 120;  // 0..500
     int                                m_lDeadzone            = 10;   // 0..90 (%)
     int                                m_rDeadzone            = 10;   // 0..90 (%)
     int                                m_lStickSens           = 50;   // 1..100

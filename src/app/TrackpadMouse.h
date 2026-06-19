@@ -18,6 +18,8 @@ public:
     void SetHapticOnClick(bool enabled)    { m_hapticOnClick = enabled; }
     void SetHapticOnMove(bool enabled)     { m_hapticOnMove  = enabled; }
     void SetMoveTickDistance(float dist)   { m_moveTickDistance = dist; }   // trackpad units / tick
+    void SetMouseDeadzone(int dz)          { m_mouseDeadzone  = dz; }       // per-frame units
+    void SetScrollDeadzone(int dz)         { m_scrollDeadzone = dz; }
 
     void Update(const uint8_t* buf, size_t n);
     void Reset();
@@ -44,6 +46,7 @@ private:
     bool     m_scrollPrevClick = false;
     int16_t  m_scrollPrevY    = 0;
     float    m_scrollAccum    = 0.0f;
+    float    m_scrollMoveAccum = 0.0f;   // distance since last scroll haptic tick
 
     // Click state
     bool     m_prevClick  = false;
@@ -59,14 +62,13 @@ private:
     bool     m_hapticOnMove     = false;
     float    m_moveTickDistance = 3000.0f;   // smaller = more ticks per movement
     float    m_moveAccum        = 0.0f;      // distance since last move tick
+    int      m_mouseDeadzone    = 20;        // per-frame deadzone (units)
+    int      m_scrollDeadzone   = 120;
 
     // Fixed pulse strengths (amplitude is barely perceptible, so density is
     // the user-facing control; these just need to be "felt").
-    static constexpr float HAPTIC_CLICK  = 700.0f;
-    static constexpr float HAPTIC_MOVE   = 600.0f;
-    static constexpr float HAPTIC_SCROLL = 700.0f;
-    static constexpr int   MOVE_JITTER   = 50;   // ignore deltas below this (resting jitter)
-    static constexpr int   SCROLL_JITTER = 45;   // scroll deadzone vs. a resting thumb
+    static constexpr float HAPTIC_CLICK = 700.0f;
+    static constexpr float HAPTIC_MOVE  = 600.0f;
 
     // side 0 = right pad, 1 = left pad
     uint8_t  mousePadSide()  const { return static_cast<uint8_t>(m_useLeftTrackpad ? 1 : 0); }

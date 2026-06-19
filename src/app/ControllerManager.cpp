@@ -75,6 +75,8 @@ void ControllerManager::EnableGameMode() {
         m_trackpad.SetInvertScroll(m_invertScroll);
         m_trackpad.SetSensitivity(MouseSensFromPos(m_trackpadSensitivity));
         m_trackpad.SetScrollSensitivity(ScrollSensFromPos(m_scrollSensitivity));
+        m_trackpad.SetMouseDeadzone(m_mouseDeadzone);
+        m_trackpad.SetScrollDeadzone(m_scrollDeadzone);
         m_trackpad.SetHapticOnClick(m_hapticOnClick);
         m_trackpad.SetHapticOnMove(m_hapticOnMove);
         m_trackpad.SetMoveTickDistance(MoveTickFromPos(m_hapticIntensity));
@@ -183,6 +185,22 @@ void ControllerManager::SetScrollSensitivity(int pos) {
     m_scrollSensitivity = pos;
     std::lock_guard<std::mutex> lock(m_inputMutex);
     m_trackpad.SetScrollSensitivity(ScrollSensFromPos(pos));
+}
+
+void ControllerManager::SetMouseDeadzone(int units) {
+    if (units < 0)   units = 0;
+    if (units > 500) units = 500;
+    m_mouseDeadzone = units;
+    std::lock_guard<std::mutex> lock(m_inputMutex);
+    m_trackpad.SetMouseDeadzone(units);
+}
+
+void ControllerManager::SetScrollDeadzone(int units) {
+    if (units < 0)   units = 0;
+    if (units > 500) units = 500;
+    m_scrollDeadzone = units;
+    std::lock_guard<std::mutex> lock(m_inputMutex);
+    m_trackpad.SetScrollDeadzone(units);
 }
 
 void ControllerManager::SetLeftDeadzone(int pos) {

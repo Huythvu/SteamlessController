@@ -18,7 +18,7 @@ static constexpr wchar_t MAP_CLASS_NAME[] = L"SteamlessControllerMapping";
 
 // Main-window client area. Controls are laid out within this.
 static constexpr int WIN_W = 384;
-static constexpr int WIN_H = 408;
+static constexpr int WIN_H = 470;
 
 // Input-monitor window client area.
 static constexpr int MON_W = 506;
@@ -229,6 +229,10 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             m_controller->SetTrackpadSensitivity(pos);   valId = IDC_SENS_VAL;
         } else if (bar == GetDlgItem(hwnd, IDC_SCROLL_SENS)) {
             m_controller->SetScrollSensitivity(pos);     valId = IDC_SCROLL_VAL;
+        } else if (bar == GetDlgItem(hwnd, IDC_MOUSE_DZ)) {
+            m_controller->SetMouseDeadzone(pos);         valId = IDC_MOUSE_DZ_VAL;
+        } else if (bar == GetDlgItem(hwnd, IDC_SCROLL_DZ)) {
+            m_controller->SetScrollDeadzone(pos);        valId = IDC_SCROLL_DZ_VAL;
         } else if (bar == GetDlgItem(hwnd, IDC_LDEADZONE)) {
             m_controller->SetLeftDeadzone(pos);          valId = IDC_LDEADZONE_VAL;
         } else if (bar == GetDlgItem(hwnd, IDC_RDEADZONE)) {
@@ -350,8 +354,10 @@ void TrayApp::CreateControls(HWND hwnd) {
          BS_AUTOCHECKBOX | WS_TABSTOP,                 PX, 172, PW, 22, IDC_BACKBUTTONS);
     make(L"BUTTON", L"Use Left Trackpad Instead",
          BS_AUTOCHECKBOX | WS_TABSTOP,                 PX, 196, PW, 22, IDC_LEFT_TRACKPAD);
-    slider(L"Mouse sensitivity",  226, IDC_SENS,        IDC_SENS_VAL,   1, 100);
-    slider(L"Scroll sensitivity", 278, IDC_SCROLL_SENS, IDC_SCROLL_VAL, 1, 100);
+    slider(L"Mouse sensitivity",  224, IDC_SENS,        IDC_SENS_VAL,   1, 100);
+    slider(L"Mouse deadzone",     274, IDC_MOUSE_DZ,    IDC_MOUSE_DZ_VAL,  0, 500);
+    slider(L"Scroll sensitivity", 324, IDC_SCROLL_SENS, IDC_SCROLL_VAL, 1, 100);
+    slider(L"Scroll deadzone",    374, IDC_SCROLL_DZ,   IDC_SCROLL_DZ_VAL, 0, 500);
 
     // --- Sticks ---
     cur = &m_tabPages[2];
@@ -419,7 +425,9 @@ void TrayApp::RefreshControls() {
         SetDlgItemInt(m_hwnd, valId, static_cast<UINT>(pos), FALSE);
     };
     setSlider(IDC_SENS,        IDC_SENS_VAL,      m_controller->GetTrackpadSensitivity());
+    setSlider(IDC_MOUSE_DZ,    IDC_MOUSE_DZ_VAL,  m_controller->GetMouseDeadzone());
     setSlider(IDC_SCROLL_SENS, IDC_SCROLL_VAL,    m_controller->GetScrollSensitivity());
+    setSlider(IDC_SCROLL_DZ,   IDC_SCROLL_DZ_VAL, m_controller->GetScrollDeadzone());
     setSlider(IDC_LDEADZONE,   IDC_LDEADZONE_VAL, m_controller->GetLeftDeadzone());
     setSlider(IDC_RDEADZONE,   IDC_RDEADZONE_VAL, m_controller->GetRightDeadzone());
     setSlider(IDC_LSTICK,      IDC_LSTICK_VAL,    m_controller->GetLeftStickSensitivity());
@@ -909,6 +917,8 @@ void TrayApp::LoadSettings() {
     m_controller->SetUseLeftTrackpad     (readBool(L"UseLeftTrackpad", false));
     m_controller->SetTrackpadSensitivity (static_cast<int>(readDword(L"TrackpadSensitivity", 35)));
     m_controller->SetScrollSensitivity   (static_cast<int>(readDword(L"ScrollSensitivity",   30)));
+    m_controller->SetMouseDeadzone       (static_cast<int>(readDword(L"MouseDeadzone",        20)));
+    m_controller->SetScrollDeadzone      (static_cast<int>(readDword(L"ScrollDeadzone",      120)));
     m_controller->SetLeftDeadzone        (static_cast<int>(readDword(L"LeftDeadzone",         10)));
     m_controller->SetRightDeadzone       (static_cast<int>(readDword(L"RightDeadzone",        10)));
     m_controller->SetLeftStickSensitivity (static_cast<int>(readDword(L"LeftStickSens",       50)));
@@ -960,6 +970,8 @@ void TrayApp::SaveSettings() {
     };
     writeDword(L"TrackpadSensitivity", static_cast<DWORD>(m_controller->GetTrackpadSensitivity()));
     writeDword(L"ScrollSensitivity",   static_cast<DWORD>(m_controller->GetScrollSensitivity()));
+    writeDword(L"MouseDeadzone",       static_cast<DWORD>(m_controller->GetMouseDeadzone()));
+    writeDword(L"ScrollDeadzone",      static_cast<DWORD>(m_controller->GetScrollDeadzone()));
     writeDword(L"LeftDeadzone",        static_cast<DWORD>(m_controller->GetLeftDeadzone()));
     writeDword(L"RightDeadzone",       static_cast<DWORD>(m_controller->GetRightDeadzone()));
     writeDword(L"LeftStickSens",       static_cast<DWORD>(m_controller->GetLeftStickSensitivity()));

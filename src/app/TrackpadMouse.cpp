@@ -48,6 +48,7 @@ void TrackpadMouse::Reset() {
     m_scrollPrevClick = false;
     m_scrollPrevY    = 0;
     m_scrollAccum    = 0.0f;
+    m_scrollMoveAccum = 0.0f;
     m_moveAccum      = 0.0f;
 }
 
@@ -69,31 +70,30 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
         if (pad.touching && m_touching) {
             const int rawdx = pad.x - m_prevX;
             const int rawdy = pad.y - m_prevY;
-            // Accumulate fractional movement so slow, precise motion isn't lost
-            // to truncation (a single frame's delta * sensitivity can be < 1px).
-            const float fdx =  rawdx * m_sensitivity + m_accumX;
-            const float fdy = -rawdy * m_sensitivity + m_accumY;  // up = up
-            const int   idx = static_cast<int>(fdx);
-            const int   idy = static_cast<int>(fdy);
-            m_accumX = fdx - idx;
-            m_accumY = fdy - idy;
-            if (idx != 0 || idy != 0) {
-                INPUT input{};
-                input.type       = INPUT_MOUSE;
-                input.mi.dwFlags = MOUSEEVENTF_MOVE;
-                input.mi.dx      = idx;
-                input.mi.dy      = idy;
-                SendInput(1, &input, sizeof(INPUT));
-            }
+            const int adx   = rawdx < 0 ? -rawdx : rawdx;
+            const int ady   = rawdy < 0 ? -rawdy : rawdy;
+            // Deadzone: ignore movement below the threshold (resting jitter).
+            if (adx + ady > m_mouseDeadzone) {
+                // Accumulate fractional movement so slow motion isn't lost to
+                // truncation (a single frame's delta * sensitivity can be < 1px).
+                const float fdx =  rawdx * m_sensitivity + m_accumX;
+                const float fdy = -rawdy * m_sensitivity + m_accumY;  // up = up
+                const int   idx = static_cast<int>(fdx);
+                const int   idy = static_cast<int>(fdy);
+                m_accumX = fdx - idx;
+                m_accumY = fdy - idy;
+                if (idx != 0 || idy != 0) {
+                    INPUT input{};
+                    input.type       = INPUT_MOUSE;
+                    input.mi.dwFlags = MOUSEEVENTF_MOVE;
+                    input.mi.dx      = idx;
+                    input.mi.dy      = idy;
+                    SendInput(1, &input, sizeof(INPUT));
+                }
 
-            // Textured "tick" feedback as the cursor moves across the pad.
-            // A small deadzone keeps a resting finger's jitter from ticking.
-            if (m_hapticOnMove) {
-                const int adx = rawdx < 0 ? -rawdx : rawdx;
-                const int ady = rawdy < 0 ? -rawdy : rawdy;
-                const int dist = adx + ady;
-                if (dist > MOVE_JITTER) {
-                    m_moveAccum += static_cast<float>(dist);
+                // Textured "tick" feedback as the cursor moves across the pad.
+                if (m_hapticOnMove) {
+                    m_moveAccum += static_cast<float>(adx + ady);
                     if (m_moveAccum >= m_moveTickDistance) {
                         m_moveAccum = 0.0f;
                         fireHaptic(mousePadSide(), HAPTIC_MOVE);
@@ -121,8 +121,9 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
 
         if (pad.touching && m_scrollTouching) {
             const int rawdy = pad.y - m_scrollPrevY;
+            const int ady   = rawdy < 0 ? -rawdy : rawdy;
             // Deadzone: ignore tiny movement so a resting thumb doesn't scroll.
-            if ((rawdy < 0 ? -rawdy : rawdy) > SCROLL_JITTER) {
+            if (ady > m_scrollDeadzone) {
                 // Natural direction: finger up scrolls up. Invert flips it.
                 const float dir    = m_invertScroll ? -1.0f : 1.0f;
                 const float fdelta = dir * rawdy * m_scrollSensitivity + m_scrollAccum;
@@ -134,8 +135,16 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
                     input.mi.dwFlags   = MOUSEEVENTF_WHEEL;
                     input.mi.mouseData = static_cast<DWORD>(ticks);
                     SendInput(1, &input, sizeof(INPUT));
-                    if (m_hapticOnMove)
-                        fireHaptic(scrollPadSide(), HAPTIC_SCROLL);
+                }
+
+                // Same distance-based tick feedback as the mouse pad, so scroll
+                // and movement haptics feel identical (and share the density).
+                if (m_hapticOnMove) {
+                    m_scrollMoveAccum += static_cast<float>(ady);
+                    if (m_scrollMoveAccum >= m_moveTickDistance) {
+                        m_scrollMoveAccum = 0.0f;
+                        fireHaptic(scrollPadSide(), HAPTIC_MOVE);
+                    }
                 }
             }
         }
