@@ -236,6 +236,24 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wp, lp))
         return true;
 
+    // Remap-by-recording: once a button on the diagram is armed, the next key
+    // the user presses becomes its mapping (Esc cancels, Del/Backspace clears).
+    if ((msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && m_recordIndex >= 0) {
+        int idx = m_recordIndex;
+        m_recordIndex = -1;
+        if (wp == VK_ESCAPE) {
+            // cancel: leave the mapping untouched
+        } else if (wp == VK_DELETE || wp == VK_BACK) {
+            m_controller->SetButtonAction(idx, { InputMapper::Type::None, 0 });
+            SaveSettings();
+        } else {
+            m_controller->SetButtonAction(
+                idx, { InputMapper::Type::Key, static_cast<uint16_t>(wp) });
+            SaveSettings();
+        }
+        return 0;
+    }
+
     if (msg == m_wmTaskbar) { AddTrayIcon(); return 0; }
 
     switch (msg) {
@@ -536,11 +554,37 @@ static std::string ActionLabel(InputMapper::Action a) {
     for (int i = 0; i < cnt; ++i)
         if (t[i].type == a.type && t[i].value == a.value)
             return std::string(prefix) + Narrow(t[i].name);
+
+    // A recorded key that isn't in the preset table: show it anyway.
+    if (a.type == InputMapper::Type::Key) {
+        if (a.value >= 0x21 && a.value <= 0x7E)
+            return std::string("Key ") + static_cast<char>(a.value);
+        char b[16]; std::snprintf(b, sizeof(b), "Key %u", a.value);
+        return b;
+    }
     return "?";
 }
 
-// Controller tab: a live button board (lights up on press) that doubles as
-// the remapper -- click any button to pick a new Xbox/keyboard target.
+// Where each physical button sits on the diagram (canvas-local pixels) and the
+// short label drawn inside it. Indices refer to InputMapper::kSources.
+namespace {
+struct Spot { int idx; float x, y, r; const char* label; };
+constexpr float kCanvasW = 600.0f, kCanvasH = 380.0f;
+const Spot kLayout[] = {
+    { 4,   95,  50, 26, "LB" },   { 5,  505,  50, 26, "RB" },
+    { 6,  120, 165, 32, "LS" },   { 7,  400, 270, 32, "RS" },
+    { 11, 235, 215, 20, "Up" },   { 12, 235, 305, 20, "Dn" },
+    { 13, 190, 260, 20, "Lt" },   { 14, 280, 260, 20, "Rt" },
+    { 3,  500, 120, 24, "Y" },    { 0,  500, 210, 24, "A" },
+    { 2,  455, 165, 24, "X" },    { 1,  545, 165, 24, "B" },
+    { 9,  280, 165, 18, "View" }, { 10, 310, 120, 16, "Steam" }, { 8, 340, 165, 18, "Menu" },
+    { 15, 160, 350, 18, "L4" },   { 16, 215, 350, 18, "L5" },
+    { 17, 385, 350, 18, "R4" },   { 18, 440, 350, 18, "R5" },
+};
+}
+
+// Controller tab: a visual gamepad whose buttons light up live and are remapped
+// by clicking one and then pressing the key to bind (JoyToKey style).
 void TrayApp::DrawControllerTab() {
     uint8_t rep[64];
     size_t n = m_controller->GetLatestReport(rep, sizeof(rep));
@@ -548,31 +592,58 @@ void TrayApp::DrawControllerTab() {
     if (ImGui::Button("Reset all mappings")) {
         m_controller->ResetButtonMappings();
         SaveSettings();
+        m_recordIndex = -1;
     }
     ImGui::SameLine(0, 16);
-    ImGui::TextDisabled("Lit = pressed now. Click a button to remap it.");
+    if (m_recordIndex >= 0)
+        ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.20f, 1.0f),
+            "Press a key for \"%s\"  (Esc cancel, Del clear)",
+            Narrow(InputMapper::kSources[m_recordIndex].name).c_str());
+    else
+        ImGui::TextDisabled("Click a button, then press a key to bind it. Right-click = reset to default.");
     ImGui::Spacing();
 
-    bool openRemap = false;
-    if (ImGui::BeginTable("btns", 2, ImGuiTableFlags_SizingStretchSame)) {
-        for (int i = 0; i < InputMapper::kSourceCount; ++i) {
-            const InputMapper::Source& s = InputMapper::kSources[i];
-            bool pressed = (n > s.byteIndex) && (rep[s.byteIndex] & s.mask) != 0;
+    ImVec2 o = ImGui::GetCursorScreenPos();
+    ImGui::Dummy(ImVec2(kCanvasW, kCanvasH));        // reserve the canvas
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled(o, ImVec2(o.x + kCanvasW, o.y + kCanvasH),
+                      ImGui::GetColorU32(ImGuiCol_FrameBg), 12.0f);
+    dl->AddRect(o, ImVec2(o.x + kCanvasW, o.y + kCanvasH),
+                ImGui::GetColorU32(ImGuiCol_Border), 12.0f);
 
-            ImGui::TableNextColumn();
-            std::string label = Narrow(s.name) + "   ->   " +
-                                ActionLabel(m_controller->GetButtonAction(i)) +
-                                "##src" + std::to_string(i);
-            if (pressed)
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.55f, 0.95f, 1.0f));
-            if (ImGui::Button(label.c_str(), ImVec2(-1, 0))) {
-                m_remapIndex = i;
-                openRemap = true;
-            }
-            if (pressed) ImGui::PopStyleColor();
+    ImU32 border = ImGui::GetColorU32(ImGuiCol_Border);
+    ImU32 textCol = ImGui::GetColorU32(ImGuiCol_Text);
+    for (const Spot& sp : kLayout) {
+        const InputMapper::Source& s = InputMapper::kSources[sp.idx];
+        bool live = (n > s.byteIndex) && (rep[s.byteIndex] & s.mask) != 0;
+        bool rec  = (m_recordIndex == sp.idx);
+        ImVec2 c(o.x + sp.x, o.y + sp.y);
+
+        ImGui::SetCursorScreenPos(ImVec2(c.x - sp.r, c.y - sp.r));
+        ImGui::InvisibleButton((std::string("##spot") + std::to_string(sp.idx)).c_str(),
+                               ImVec2(sp.r * 2, sp.r * 2),
+                               ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
+        bool hovered = ImGui::IsItemHovered();
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Left))  m_recordIndex = sp.idx;
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+            m_controller->SetButtonAction(sp.idx, s.def);
+            SaveSettings();
+            if (rec) m_recordIndex = -1;
         }
-        ImGui::EndTable();
+        if (hovered)
+            ImGui::SetTooltip("%s  ->  %s", Narrow(s.name).c_str(),
+                              ActionLabel(m_controller->GetButtonAction(sp.idx)).c_str());
+
+        ImU32 fill = rec   ? IM_COL32(240, 200, 50, 255)
+                   : live  ? IM_COL32(60, 150, 240, 255)
+                   : hovered ? IM_COL32(90, 95, 105, 255)
+                             : IM_COL32(60, 63, 70, 255);
+        dl->AddCircleFilled(c, sp.r, fill, 32);
+        dl->AddCircle(c, sp.r, border, 32);
+        ImVec2 ts = ImGui::CalcTextSize(sp.label);
+        dl->AddText(ImVec2(c.x - ts.x / 2, c.y - ts.y / 2), textCol, sp.label);
     }
+    ImGui::SetCursorScreenPos(ImVec2(o.x, o.y + kCanvasH));
 
     ImGui::Spacing();
     auto trig = [&](int off) -> float {
@@ -584,35 +655,6 @@ void TrayApp::DrawControllerTab() {
     ImGui::TextDisabled("TRIGGERS");
     ImGui::ProgressBar(trig(6), ImVec2(-1, 0), "");
     ImGui::ProgressBar(trig(8), ImVec2(-1, 0), "");
-
-    if (openRemap) ImGui::OpenPopup("remap");
-    if (ImGui::BeginPopup("remap")) {
-        if (m_remapIndex >= 0) {
-            ImGui::TextDisabled("%s", Narrow(InputMapper::kSources[m_remapIndex].name).c_str());
-            ImGui::Separator();
-            auto apply = [&](InputMapper::Action a) {
-                m_controller->SetButtonAction(m_remapIndex, a);
-                SaveSettings();
-                ImGui::CloseCurrentPopup();
-            };
-            if (ImGui::Selectable("None")) apply({InputMapper::Type::None, 0});
-            ImGui::TextDisabled("XBOX");
-            for (int i = 0; i < InputMapper::kXboxTargetCount; ++i) {
-                const auto& t = InputMapper::kXboxTargets[i];
-                if (ImGui::Selectable(Narrow(t.name).c_str()))
-                    apply({t.type, t.value});
-            }
-            ImGui::TextDisabled("KEYBOARD");
-            for (int i = 0; i < InputMapper::kKeyTargetCount; ++i) {
-                const auto& t = InputMapper::kKeyTargets[i];
-                std::string lbl = std::string("Key ") + Narrow(t.name) +
-                                  "##k" + std::to_string(i);
-                if (ImGui::Selectable(lbl.c_str()))
-                    apply({t.type, t.value});
-            }
-        }
-        ImGui::EndPopup();
-    }
 }
 
 // A square stick view: outer bounds, the circular deadzone ring, and a dot

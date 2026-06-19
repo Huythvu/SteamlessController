@@ -79,7 +79,7 @@ private:
 
     // UI scratch state
     int                                m_currentTab = 0;
-    int                                m_remapIndex = -1;   // source being remapped
+    int                                m_recordIndex = -1;  // source listening for a key
     char                               m_profileNameBuf[64] = {};
 
     // Tray state marshaled from the controller callback (any thread).
