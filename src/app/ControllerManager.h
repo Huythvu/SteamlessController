@@ -36,8 +36,8 @@ public:
     void SetInvertScroll(bool enabled);
     void SetTrackpadSensitivity(int pos);   // 1..100
     void SetScrollSensitivity(int pos);     // 1..100
-    void SetMouseDeadzone(int units);       // 0..500
-    void SetScrollDeadzone(int units);      // 0..500
+    void SetMouseDeadzone(int pos);         // 1..100 (50 = baseline)
+    void SetScrollDeadzone(int pos);        // 1..100 (50 = baseline)
 
     void SetLeftDeadzone(int pos);          // 0..90
     void SetRightDeadzone(int pos);         // 0..90
@@ -113,8 +113,8 @@ private:
     int                                m_hapticIntensity      = 60;   // 1..100
     int                                m_trackpadSensitivity  = 35;   // 1..100
     int                                m_scrollSensitivity    = 30;   // 1..100
-    int                                m_mouseDeadzone        = 120;  // 0..2000
-    int                                m_scrollDeadzone       = 600;  // 0..2000
+    int                                m_mouseDeadzone        = 50;   // 1..100 (slider pos)
+    int                                m_scrollDeadzone       = 50;   // 1..100 (slider pos)
     int                                m_lDeadzone            = 10;   // 0..90 (%)
     int                                m_rDeadzone            = 10;   // 0..90 (%)
     int                                m_lStickSens           = 50;   // 1..100

@@ -3,6 +3,7 @@
 #include "steam/SteamController.h"
 #include <memory>
 #include <cstring>
+#include <cmath>
 
 static std::unique_ptr<SteamController> g_ctrl;
 
@@ -19,6 +20,14 @@ static float ScrollSensFromPos(int pos) {
 // between ticks. 1 -> very sparse, 100 -> dense.
 static float MoveTickFromPos(int pos) {
     return 8000.0f - (pos - 1) / 99.0f * (8000.0f - 600.0f);
+}
+
+// Deadzone: a 1..100 slider where 50 = baseline, 100 = 2x, 1 ~= 0.5x.
+static int MouseDzFromPos(int pos) {
+    return static_cast<int>(120.0f * std::pow(2.0f, (pos - 50) / 50.0f));
+}
+static int ScrollDzFromPos(int pos) {
+    return static_cast<int>(600.0f * std::pow(2.0f, (pos - 50) / 50.0f));
 }
 
 // Map a 1..100 stick-sensitivity position to a response-curve exponent:
@@ -75,8 +84,8 @@ void ControllerManager::EnableGameMode() {
         m_trackpad.SetInvertScroll(m_invertScroll);
         m_trackpad.SetSensitivity(MouseSensFromPos(m_trackpadSensitivity));
         m_trackpad.SetScrollSensitivity(ScrollSensFromPos(m_scrollSensitivity));
-        m_trackpad.SetMouseDeadzone(m_mouseDeadzone);
-        m_trackpad.SetScrollDeadzone(m_scrollDeadzone);
+        m_trackpad.SetMouseDeadzone(MouseDzFromPos(m_mouseDeadzone));
+        m_trackpad.SetScrollDeadzone(ScrollDzFromPos(m_scrollDeadzone));
         m_trackpad.SetHapticOnClick(m_hapticOnClick);
         m_trackpad.SetHapticOnMove(m_hapticOnMove);
         m_trackpad.SetMoveTickDistance(MoveTickFromPos(m_hapticIntensity));
@@ -187,20 +196,20 @@ void ControllerManager::SetScrollSensitivity(int pos) {
     m_trackpad.SetScrollSensitivity(ScrollSensFromPos(pos));
 }
 
-void ControllerManager::SetMouseDeadzone(int units) {
-    if (units < 0)    units = 0;
-    if (units > 2000) units = 2000;
-    m_mouseDeadzone = units;
+void ControllerManager::SetMouseDeadzone(int pos) {
+    if (pos < 1)   pos = 1;
+    if (pos > 100) pos = 100;
+    m_mouseDeadzone = pos;
     std::lock_guard<std::mutex> lock(m_inputMutex);
-    m_trackpad.SetMouseDeadzone(units);
+    m_trackpad.SetMouseDeadzone(MouseDzFromPos(pos));
 }
 
-void ControllerManager::SetScrollDeadzone(int units) {
-    if (units < 0)    units = 0;
-    if (units > 2000) units = 2000;
-    m_scrollDeadzone = units;
+void ControllerManager::SetScrollDeadzone(int pos) {
+    if (pos < 1)   pos = 1;
+    if (pos > 100) pos = 100;
+    m_scrollDeadzone = pos;
     std::lock_guard<std::mutex> lock(m_inputMutex);
-    m_trackpad.SetScrollDeadzone(units);
+    m_trackpad.SetScrollDeadzone(ScrollDzFromPos(pos));
 }
 
 void ControllerManager::SetLeftDeadzone(int pos) {
