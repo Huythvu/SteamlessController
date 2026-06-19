@@ -29,6 +29,11 @@ public:
     void EnableGameMode();
     void DisableGameMode();
 
+    // Auto-enable Steamless Mode whenever a controller is connected.
+    void SetAutoEnable(bool enabled) { m_autoEnable = enabled; }
+    bool IsAutoEnable() const        { return m_autoEnable; }
+    void ApplyAutoEnable();   // enable now if configured + connected + off
+
     void SetTrackpadMouseEnabled(bool enabled);
     void SetBackButtonsEnabled(bool enabled);
     void SetUseLeftTrackpad(bool enabled);
@@ -108,6 +113,7 @@ private:
     bool                               m_scrollWheelEnabled   = false;
     bool                               m_invertScroll         = false;
     std::atomic<bool>                  m_trackpadSuspended{false};
+    bool                               m_autoEnable           = false;
     bool                               m_hapticOnClick        = false;
     bool                               m_hapticOnMove         = false;
     int                                m_hapticIntensity      = 50;   // 1..100 (50 = baseline)

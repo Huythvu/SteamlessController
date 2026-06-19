@@ -102,6 +102,7 @@ private:
     static constexpr UINT IDC_HAPTIC_MOVE   = 2021;
     static constexpr UINT IDC_HAPTIC_INT    = 2022;
     static constexpr UINT IDC_HAPTIC_VAL    = 2023;
+    static constexpr UINT IDC_AUTOENABLE    = 2028;
     static constexpr UINT IDC_MOUSE_DZ      = 2024;
     static constexpr UINT IDC_MOUSE_DZ_VAL  = 2025;
     static constexpr UINT IDC_SCROLL_DZ     = 2026;

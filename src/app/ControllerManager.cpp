@@ -252,7 +252,13 @@ void ControllerManager::TryOpen() {
     if (g_ctrl->Open()) {
         m_connected = true;
         m_onStateChanged(m_connected.load(), m_gameModeActive.load(), false);
+        ApplyAutoEnable();
     }
+}
+
+void ControllerManager::ApplyAutoEnable() {
+    if (m_autoEnable && m_connected.load() && !m_gameModeActive.load())
+        EnableGameMode();
 }
 
 void ControllerManager::Close(bool restoreLizard) {

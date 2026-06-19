@@ -112,6 +112,7 @@ bool TrayApp::Init(HINSTANCE hInstance) {
         });
 
     LoadSettings();
+    m_controller->ApplyAutoEnable();   // turn on now if already connected
     AddTrayIcon();
     SetTimer(m_hwnd, BATT_TIMER, 5000, nullptr);   // periodic battery / tooltip refresh
     return true;
@@ -214,6 +215,10 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             break;
         case IDC_STARTUP:
             SetStartupEnabled(IsDlgButtonChecked(hwnd, IDC_STARTUP) == BST_CHECKED);
+            break;
+        case IDC_AUTOENABLE:
+            m_controller->SetAutoEnable(IsDlgButtonChecked(hwnd, IDC_AUTOENABLE) == BST_CHECKED);
+            SaveSettings();
             break;
         case IDM_EXIT:
             m_controller->DisableGameMode();
@@ -344,12 +349,14 @@ void TrayApp::CreateControls(HWND hwnd) {
     // --- General ---
     cur = &m_tabPages[0];
     make(L"STATIC", L"Battery: --", SS_LEFT,           PX, 100, PW, 18, IDC_BATTERY);
+    make(L"BUTTON", L"Auto-enable Steamless Mode",
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 PX, 126, PW, 22, IDC_AUTOENABLE);
     make(L"BUTTON", L"Start with Windows",
-         BS_AUTOCHECKBOX | WS_TABSTOP,                 PX, 128, PW, 22, IDC_STARTUP);
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 PX, 150, PW, 22, IDC_STARTUP);
     make(L"BUTTON", L"Input Monitor", BS_PUSHBUTTON | WS_TABSTOP,
-                                                       PX, 160, PW, 30, IDC_MONITOR);
+                                                       PX, 182, PW, 30, IDC_MONITOR);
     make(L"BUTTON", L"Button Mapping", BS_PUSHBUTTON | WS_TABSTOP,
-                                                       PX, 196, PW, 30, IDC_MAPPING);
+                                                       PX, 218, PW, 30, IDC_MAPPING);
 
     // --- Trackpad ---
     cur = &m_tabPages[1];
@@ -433,6 +440,8 @@ void TrayApp::RefreshControls() {
                    m_controller->IsUseLeftTrackpad() ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(m_hwnd, IDC_STARTUP,
                    IsStartupEnabled() ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(m_hwnd, IDC_AUTOENABLE,
+                   m_controller->IsAutoEnable() ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(m_hwnd, IDC_HAPTIC_CLICK,
                    m_controller->IsHapticOnClick() ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(m_hwnd, IDC_HAPTIC_MOVE,
@@ -951,6 +960,7 @@ void TrayApp::LoadSettings() {
     m_controller->SetRightDeadzone       (static_cast<int>(readDword(L"RightDeadzone",        10)));
     m_controller->SetLeftStickSensitivity (static_cast<int>(readDword(L"LeftStickSens",       50)));
     m_controller->SetRightStickSensitivity(static_cast<int>(readDword(L"RightStickSens",      50)));
+    m_controller->SetAutoEnable           (readBool(L"AutoEnable",    false));
     m_controller->SetHapticOnClick        (readBool(L"HapticOnClick", false));
     m_controller->SetHapticOnMove         (readBool(L"HapticOnMove",  false));
     m_controller->SetHapticIntensity      (static_cast<int>(readDword(L"HapticDensity",        50)));
@@ -989,6 +999,7 @@ void TrayApp::SaveSettings() {
     writeBool(L"InvertScroll",    m_controller->IsInvertScroll());
     writeBool(L"BackButtons",     m_controller->IsBackButtonsEnabled());
     writeBool(L"UseLeftTrackpad", m_controller->IsUseLeftTrackpad());
+    writeBool(L"AutoEnable",      m_controller->IsAutoEnable());
     writeBool(L"HapticOnClick",   m_controller->IsHapticOnClick());
     writeBool(L"HapticOnMove",    m_controller->IsHapticOnMove());
 
