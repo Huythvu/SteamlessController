@@ -75,7 +75,7 @@ add_executable(SteamlessController WIN32
 )
 target_include_directories(SteamlessController PRIVATE resources)
 target_link_libraries(SteamlessController PRIVATE
-    SteamController ViGEmClient comctl32 imgui d3d11 dxgi d3dcompiler)
+    SteamController ViGEmClient comctl32 imgui d3d11 dxgi d3dcompiler dwmapi)
 if (MSVC)
     target_compile_options(SteamlessController PRIVATE /W4 /WX)
     # We embed our own manifest via app.rc; stop the linker generating a

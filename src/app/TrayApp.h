@@ -49,6 +49,8 @@ private:
     void LoadSettings();
     void SaveSettings();
     std::vector<std::wstring> ListProfiles() const;
+    std::vector<std::wstring> ReadProfileOrder() const;
+    void SaveProfileOrder(const std::vector<std::wstring>& order) const;
     void SwitchProfile(const std::wstring& name);
     void CreateProfile(const std::wstring& name);
     void RenameProfile(const std::wstring& newName);

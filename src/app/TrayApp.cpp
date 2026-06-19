@@ -4,7 +4,13 @@
 #include "resource.h"
 #include <shellapi.h>
 #include <dbt.h>
+#include <dwmapi.h>
+#include <algorithm>
 #include <cstdio>
+
+#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
+#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+#endif
 
 #pragma warning(push, 0)
 #include "imgui.h"
@@ -90,6 +96,14 @@ bool TrayApp::Init(HINSTANCE hInstance) {
                              WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
                              900, 560, nullptr, nullptr, hInstance, nullptr);
     if (!m_hwnd) return false;
+
+    // Dark non-client area (title bar / borders) to match the ImGui theme.
+    // Attribute 20 is the documented value (Win10 2004+); older builds used
+    // 19, so fall back to that if the first call is rejected.
+    BOOL dark = TRUE;
+    if (DwmSetWindowAttribute(m_hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
+                              &dark, sizeof(dark)) != S_OK)
+        DwmSetWindowAttribute(m_hwnd, 19, &dark, sizeof(dark));
 
     if (!CreateDeviceD3D(m_hwnd)) {
         CleanupDeviceD3D();
@@ -339,10 +353,22 @@ void TrayApp::DrawProfilesSidebar() {
     ImGui::TextUnformatted("PROFILES");
     ImGui::Separator();
 
-    for (auto const& p : ListProfiles()) {
+    // Click to switch; drag a row up/down to reorder (persisted immediately).
+    auto profiles = ListProfiles();
+    for (int i = 0; i < static_cast<int>(profiles.size()); ++i) {
+        const std::wstring& p = profiles[i];
         bool sel = (p == m_activeProfile);
         if (ImGui::Selectable(Narrow(p).c_str(), sel))
             SwitchProfile(p);
+
+        if (ImGui::IsItemActive() && !ImGui::IsItemHovered()) {
+            int j = i + (ImGui::GetMouseDragDelta(0).y < 0.0f ? -1 : 1);
+            if (j >= 0 && j < static_cast<int>(profiles.size())) {
+                std::swap(profiles[i], profiles[j]);
+                SaveProfileOrder(profiles);
+                ImGui::ResetMouseDragDelta();
+            }
+        }
     }
 
     ImGui::Separator();
@@ -640,18 +666,68 @@ void TrayApp::SaveSettings() {
     }
 }
 
+// The display order is a separate, user-controllable list (most-recently
+// added first, draggable). It's stored as a newline-delimited string so we
+// don't depend on RegEnumKey's alphabetical ordering.
+std::vector<std::wstring> TrayApp::ReadProfileOrder() const {
+    std::vector<std::wstring> order;
+    HKEY root;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, REG_KEY, 0, KEY_READ, &root) == ERROR_SUCCESS) {
+        wchar_t buf[2048]; DWORD sz = sizeof(buf) - sizeof(wchar_t), type = 0;
+        if (RegQueryValueExW(root, L"ProfileOrder", nullptr, &type,
+                             reinterpret_cast<LPBYTE>(buf), &sz) == ERROR_SUCCESS && type == REG_SZ) {
+            buf[sz / sizeof(wchar_t)] = 0;   // guarantee termination
+            std::wstring s(buf), cur;
+            for (wchar_t c : s) {
+                if (c == L'\n') { if (!cur.empty()) order.push_back(cur); cur.clear(); }
+                else            cur.push_back(c);
+            }
+            if (!cur.empty()) order.push_back(cur);
+        }
+        RegCloseKey(root);
+    }
+    return order;
+}
+
+void TrayApp::SaveProfileOrder(const std::vector<std::wstring>& order) const {
+    std::wstring s;
+    for (auto const& n : order) { s += n; s += L'\n'; }
+    HKEY root;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, REG_KEY, 0, nullptr, REG_OPTION_NON_VOLATILE,
+                        KEY_WRITE, nullptr, &root, nullptr) == ERROR_SUCCESS) {
+        RegSetValueExW(root, L"ProfileOrder", 0, REG_SZ,
+                       reinterpret_cast<const BYTE*>(s.c_str()),
+                       static_cast<DWORD>((s.size() + 1) * sizeof(wchar_t)));
+        RegCloseKey(root);
+    }
+}
+
 std::vector<std::wstring> TrayApp::ListProfiles() const {
-    std::vector<std::wstring> out;
+    // Everything that actually exists as a profile subkey.
+    std::vector<std::wstring> actual;
     HKEY base;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, REG_PROFILES, 0, KEY_READ, &base) == ERROR_SUCCESS) {
         for (DWORD i = 0;; ++i) {
             wchar_t nm[128]; DWORD sz = 128;
             if (RegEnumKeyExW(base, i, nm, &sz, nullptr, nullptr, nullptr, nullptr) != ERROR_SUCCESS)
                 break;
-            out.push_back(nm);
+            actual.push_back(nm);
         }
         RegCloseKey(base);
     }
+
+    // Apply the saved order, dropping stale entries; append any profiles that
+    // exist but aren't listed yet (e.g. created before ordering existed).
+    auto contains = [](const std::vector<std::wstring>& v, const std::wstring& x) {
+        for (auto const& e : v) if (e == x) return true;
+        return false;
+    };
+    std::vector<std::wstring> out;
+    for (auto const& n : ReadProfileOrder())
+        if (contains(actual, n) && !contains(out, n)) out.push_back(n);
+    for (auto const& n : actual)
+        if (!contains(out, n)) out.push_back(n);
+
     if (out.empty()) out.push_back(L"Default");
     return out;
 }
@@ -671,6 +747,10 @@ void TrayApp::CreateProfile(const std::wstring& name) {
     if (name.empty() || ProfileExists(name)) return;
     m_activeProfile = name;
     SaveSettings();
+    // Newest profile goes to the top of the list.
+    auto order = ReadProfileOrder();
+    order.insert(order.begin(), name);
+    SaveProfileOrder(order);
 }
 
 void TrayApp::RenameProfile(const std::wstring& newName) {
@@ -680,6 +760,12 @@ void TrayApp::RenameProfile(const std::wstring& newName) {
     SaveSettings();
     std::wstring oldPath = std::wstring(REG_PROFILES) + L"\\" + oldName;
     RegDeleteKeyW(HKEY_CURRENT_USER, oldPath.c_str());
+    // Keep the renamed profile in its existing slot.
+    auto order = ReadProfileOrder();
+    bool replaced = false;
+    for (auto& n : order) if (n == oldName) { n = newName; replaced = true; break; }
+    if (!replaced) order.insert(order.begin(), newName);
+    SaveProfileOrder(order);
 }
 
 void TrayApp::DeleteProfile() {
@@ -687,6 +773,9 @@ void TrayApp::DeleteProfile() {
     if (profiles.size() <= 1) return;
     std::wstring victim = m_activeProfile;
     RegDeleteKeyW(HKEY_CURRENT_USER, ProfilePath().c_str());
+    auto order = ReadProfileOrder();
+    order.erase(std::remove(order.begin(), order.end(), victim), order.end());
+    SaveProfileOrder(order);
     m_activeProfile = (profiles[0] != victim) ? profiles[0] : profiles[1];
     HKEY pk;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, ProfilePath().c_str(), 0, KEY_READ, &pk) == ERROR_SUCCESS) {
