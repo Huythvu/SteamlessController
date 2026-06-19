@@ -1,6 +1,7 @@
 #pragma once
 #include <Windows.h>
 #include <memory>
+#include <vector>
 #include <cstdint>
 #include <atomic>
 
@@ -32,6 +33,7 @@ private:
     void CreateControls(HWND hwnd);
     void RefreshControls();
     void ShowMainWindow();
+    void ShowTab(int index);
 
     void AddTrayIcon();
     void RemoveTrayIcon();
@@ -51,6 +53,8 @@ private:
     HFONT                              m_font      = nullptr;
     HWND                               m_monitorHwnd = nullptr;
     HWND                               m_mappingHwnd = nullptr;
+    HWND                               m_tab         = nullptr;
+    std::vector<HWND>                  m_tabPages[4];
     HDEVNOTIFY                         m_devNotify = nullptr;
     std::unique_ptr<ControllerManager> m_controller;
     std::atomic_bool                   m_pendingConnected{false};
@@ -63,6 +67,7 @@ private:
     static constexpr UINT IDC_MONITOR       = 1003;
     static constexpr UINT IDC_MAPPING       = 1004;
     static constexpr UINT IDC_HAPTIC_TEST   = 1005;
+    static constexpr UINT IDC_TAB           = 1006;
     static constexpr UINT MON_TIMER         = 1;
 
     // Mapping window: one combo per source button, plus a reset button.

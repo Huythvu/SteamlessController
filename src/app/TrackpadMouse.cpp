@@ -32,9 +32,10 @@ TrackpadMouse::Pad TrackpadMouse::ReadPad(const uint8_t* buf, bool left) {
 }
 
 void TrackpadMouse::Reset() {
-    if (m_prevClick) SendMouseButton(MOUSEEVENTF_LEFTUP);
-    if (m_prevR4)    SendMouseButton(MOUSEEVENTF_LEFTUP);
-    if (m_prevR5)    SendMouseButton(MOUSEEVENTF_RIGHTUP);
+    if (m_prevClick)      SendMouseButton(MOUSEEVENTF_LEFTUP);
+    if (m_scrollPrevClick) SendMouseButton(MOUSEEVENTF_MIDDLEUP);
+    if (m_prevR4)         SendMouseButton(MOUSEEVENTF_LEFTUP);
+    if (m_prevR5)         SendMouseButton(MOUSEEVENTF_RIGHTUP);
     m_touching  = false;
     m_prevClick = false;
     m_prevR4    = false;
@@ -44,6 +45,7 @@ void TrackpadMouse::Reset() {
     m_accumX    = 0.0f;
     m_accumY    = 0.0f;
     m_scrollTouching = false;
+    m_scrollPrevClick = false;
     m_scrollPrevY    = 0;
     m_scrollAccum    = 0.0f;
     m_moveAccum      = 0.0f;
@@ -118,25 +120,37 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
         const Pad pad = ReadPad(buf, scrollLeft);
 
         if (pad.touching && m_scrollTouching) {
-            // Natural direction: finger up scrolls up. Invert flips it.
-            const float dir    = m_invertScroll ? -1.0f : 1.0f;
-            const float fdelta = dir * (pad.y - m_scrollPrevY) * m_scrollSensitivity + m_scrollAccum;
-            const int   ticks  = static_cast<int>(fdelta);
-            m_scrollAccum = fdelta - ticks;
-            if (ticks != 0) {
-                INPUT input{};
-                input.type         = INPUT_MOUSE;
-                input.mi.dwFlags   = MOUSEEVENTF_WHEEL;
-                input.mi.mouseData = static_cast<DWORD>(ticks);
-                SendInput(1, &input, sizeof(INPUT));
-                if (m_hapticOnMove)
-                    fireHaptic(scrollPadSide(), HAPTIC_SCROLL);
+            const int rawdy = pad.y - m_scrollPrevY;
+            // Deadzone: ignore tiny movement so a resting thumb doesn't scroll.
+            if ((rawdy < 0 ? -rawdy : rawdy) > SCROLL_JITTER) {
+                // Natural direction: finger up scrolls up. Invert flips it.
+                const float dir    = m_invertScroll ? -1.0f : 1.0f;
+                const float fdelta = dir * rawdy * m_scrollSensitivity + m_scrollAccum;
+                const int   ticks  = static_cast<int>(fdelta);
+                m_scrollAccum = fdelta - ticks;
+                if (ticks != 0) {
+                    INPUT input{};
+                    input.type         = INPUT_MOUSE;
+                    input.mi.dwFlags   = MOUSEEVENTF_WHEEL;
+                    input.mi.mouseData = static_cast<DWORD>(ticks);
+                    SendInput(1, &input, sizeof(INPUT));
+                    if (m_hapticOnMove)
+                        fireHaptic(scrollPadSide(), HAPTIC_SCROLL);
+                }
             }
         }
 
         if (pad.touching) m_scrollPrevY = pad.y;
         else              m_scrollAccum = 0.0f;
         m_scrollTouching = pad.touching;
+
+        // Clicking the scroll pad acts as a middle click.
+        if (pad.clicking != m_scrollPrevClick) {
+            SendMouseButton(pad.clicking ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_MIDDLEUP);
+            if (m_hapticOnClick)
+                fireHaptic(scrollPadSide(), HAPTIC_CLICK);
+            m_scrollPrevClick = pad.clicking;
+        }
     }
 
     // --- Back buttons: left side uses L4/L5, right side uses R4/R5 ---

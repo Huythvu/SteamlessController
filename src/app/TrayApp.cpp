@@ -17,8 +17,8 @@ static constexpr wchar_t MON_CLASS_NAME[] = L"SteamlessControllerMonitor";
 static constexpr wchar_t MAP_CLASS_NAME[] = L"SteamlessControllerMapping";
 
 // Main-window client area. Controls are laid out within this.
-static constexpr int WIN_W = 360;
-static constexpr int WIN_H = 884;
+static constexpr int WIN_W = 384;
+static constexpr int WIN_H = 408;
 
 // Input-monitor window client area.
 static constexpr int MON_W = 506;
@@ -46,7 +46,7 @@ bool TrayApp::Init(HINSTANCE hInstance) {
     m_wmTaskbar = RegisterWindowMessageW(L"TaskbarCreated");
 
     // Enable modern visual styles for the standard controls (checkboxes/buttons).
-    INITCOMMONCONTROLSEX icc{ sizeof(icc), ICC_STANDARD_CLASSES | ICC_BAR_CLASSES };
+    INITCOMMONCONTROLSEX icc{ sizeof(icc), ICC_STANDARD_CLASSES | ICC_BAR_CLASSES | ICC_TAB_CLASSES };
     InitCommonControlsEx(&icc);
 
     WNDCLASSEXW wc{};
@@ -247,6 +247,13 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     }
 
+    case WM_NOTIFY: {
+        LPNMHDR nm = reinterpret_cast<LPNMHDR>(lp);
+        if (nm->hwndFrom == m_tab && nm->code == TCN_SELCHANGE)
+            ShowTab(static_cast<int>(SendMessageW(m_tab, TCM_GETCURSEL, 0, 0)));
+        return 0;
+    }
+
     case WM_CTLCOLORSTATIC: {
         // Make the status label's background blend with the window.
         HDC dc = reinterpret_cast<HDC>(wp);
@@ -282,70 +289,96 @@ void TrayApp::CreateControls(HWND hwnd) {
     SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0);
     m_font = CreateFontIndirectW(&ncm.lfMessageFont);
 
+    // Controls created while `cur` points at a page are registered to that tab
+    // and start hidden; ShowTab() toggles visibility. Controls created with
+    // cur==nullptr (status, the toggle button, the tab control) are always shown.
+    std::vector<HWND>* cur = nullptr;
     auto make = [&](const wchar_t* cls, const wchar_t* text, DWORD style,
                     int x, int y, int w, int h, UINT id) -> HWND {
-        HWND c = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style,
+        HWND c = CreateWindowExW(0, cls, text, WS_CHILD | style,
                                  x, y, w, h, hwnd,
                                  reinterpret_cast<HMENU>(static_cast<UINT_PTR>(id)),
                                  m_hInstance, nullptr);
         SendMessageW(c, WM_SETFONT, reinterpret_cast<WPARAM>(m_font), TRUE);
+        if (cur) cur->push_back(c);
         return c;
     };
 
-    const int M  = 20;            // margin
-    const int W  = WIN_W - 2*M;   // content width
-    const int VW = 36;            // value-label width (right-aligned number)
-
-    // Helper: a labelled slider with a live numeric readout to its right.
+    const int PX = 22, PW = WIN_W - 2*PX, VW = 36;   // page content geometry
     auto slider = [&](const wchar_t* label, int y, UINT id, UINT valId, int mn, int mx) {
-        make(L"STATIC", label, SS_LEFT,  M,           y, W - VW, 18, 0);
-        make(L"STATIC", L"",   SS_RIGHT, M + W - VW,   y, VW,     18, valId);
-        HWND b = make(TRACKBAR_CLASSW, L"", TBS_HORZ | WS_TABSTOP, M, y + 20, W, 28, id);
+        make(L"STATIC", label, SS_LEFT,  PX,            y, PW - VW, 18, 0);
+        make(L"STATIC", L"",   SS_RIGHT, PX + PW - VW,  y, VW,      18, valId);
+        HWND b = make(TRACKBAR_CLASSW, L"", TBS_HORZ | WS_TABSTOP, PX, y + 20, PW, 26, id);
         SendMessageW(b, TBM_SETRANGE, TRUE, MAKELONG(mn, mx));
         SendMessageW(b, TBM_SETPAGESIZE, 0, 10);
     };
 
-    make(L"STATIC", L"", SS_LEFT,                       M,  15, W, 20, IDC_STATUS);
-    make(L"BUTTON", L"Enable Steamless Mode", BS_PUSHBUTTON | WS_TABSTOP,
-                                                        M,  45, W, 34, IDC_TOGGLE);
+    // Always-visible header: status line + the main toggle.
+    make(L"STATIC", L"", SS_LEFT | WS_VISIBLE,         14,  8, WIN_W - 28, 18, IDC_STATUS);
+    make(L"BUTTON", L"Enable Steamless Mode", BS_PUSHBUTTON | WS_TABSTOP | WS_VISIBLE,
+                                                       14, 30, WIN_W - 28, 32, IDC_TOGGLE);
 
-    make(L"STATIC", L"Mouse && Trackpad", SS_LEFT,     M,  86, W, 18, 0);
-    make(L"BUTTON", L"Trackpad Mouse",
-         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 108, W, 22, IDC_TRACKPAD);
-    make(L"BUTTON", L"Left Trackpad Scroll Wheel",
-         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 132, W, 22, IDC_SCROLL);
-    make(L"BUTTON", L"Invert Scroll Direction",
-         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 156, W, 22, IDC_INVERT);
-    make(L"BUTTON", L"Back Buttons for Clicking",
-         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 180, W, 22, IDC_BACKBUTTONS);
-    make(L"BUTTON", L"Use Left Trackpad Instead",
-         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 204, W, 22, IDC_LEFT_TRACKPAD);
+    // Tab control fills the rest of the window.
+    m_tab = make(WC_TABCONTROLW, L"", WS_TABSTOP | WS_VISIBLE,
+                 10, 70, WIN_W - 20, WIN_H - 80, IDC_TAB);
+    const wchar_t* tabs[4] = { L"General", L"Trackpad", L"Sticks", L"Haptics" };
+    for (int i = 0; i < 4; ++i) {
+        TCITEMW ti{};
+        ti.mask    = TCIF_TEXT;
+        ti.pszText = const_cast<LPWSTR>(tabs[i]);
+        SendMessageW(m_tab, TCM_INSERTITEMW, i, reinterpret_cast<LPARAM>(&ti));
+    }
 
-    slider(L"Mouse sensitivity",  236, IDC_SENS,        IDC_SENS_VAL,   1, 100);
-    slider(L"Scroll sensitivity", 290, IDC_SCROLL_SENS, IDC_SCROLL_VAL, 1, 100);
-
-    make(L"STATIC", L"Sticks", SS_LEFT,                M, 344, W, 18, 0);
-    slider(L"Left stick deadzone (%)",   366, IDC_LDEADZONE, IDC_LDEADZONE_VAL, 0, 90);
-    slider(L"Right stick deadzone (%)",  420, IDC_RDEADZONE, IDC_RDEADZONE_VAL, 0, 90);
-    slider(L"Left stick sensitivity",    474, IDC_LSTICK,    IDC_LSTICK_VAL,    1, 100);
-    slider(L"Right stick sensitivity",   528, IDC_RSTICK,    IDC_RSTICK_VAL,    1, 100);
-
-    make(L"STATIC", L"General", SS_LEFT,               M, 582, W, 18, 0);
+    // --- General ---
+    cur = &m_tabPages[0];
     make(L"BUTTON", L"Start with Windows",
-         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 604, W, 22, IDC_STARTUP);
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 PX, 100, PW, 22, IDC_STARTUP);
     make(L"BUTTON", L"Input Monitor", BS_PUSHBUTTON | WS_TABSTOP,
-                                                        M, 634, W, 30, IDC_MONITOR);
+                                                       PX, 132, PW, 30, IDC_MONITOR);
     make(L"BUTTON", L"Button Mapping", BS_PUSHBUTTON | WS_TABSTOP,
-                                                        M, 670, W, 30, IDC_MAPPING);
-    make(L"BUTTON", L"Test Haptic", BS_PUSHBUTTON | WS_TABSTOP,
-                                                        M, 706, W, 30, IDC_HAPTIC_TEST);
+                                                       PX, 168, PW, 30, IDC_MAPPING);
 
-    make(L"STATIC", L"Trackpad Haptics", SS_LEFT,      M, 748, W, 18, 0);
+    // --- Trackpad ---
+    cur = &m_tabPages[1];
+    make(L"BUTTON", L"Trackpad Mouse",
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 PX, 100, PW, 22, IDC_TRACKPAD);
+    make(L"BUTTON", L"Left Trackpad Scroll Wheel",
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 PX, 124, PW, 22, IDC_SCROLL);
+    make(L"BUTTON", L"Invert Scroll Direction",
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 PX, 148, PW, 22, IDC_INVERT);
+    make(L"BUTTON", L"Back Buttons for Clicking",
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 PX, 172, PW, 22, IDC_BACKBUTTONS);
+    make(L"BUTTON", L"Use Left Trackpad Instead",
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 PX, 196, PW, 22, IDC_LEFT_TRACKPAD);
+    slider(L"Mouse sensitivity",  226, IDC_SENS,        IDC_SENS_VAL,   1, 100);
+    slider(L"Scroll sensitivity", 278, IDC_SCROLL_SENS, IDC_SCROLL_VAL, 1, 100);
+
+    // --- Sticks ---
+    cur = &m_tabPages[2];
+    slider(L"Left stick deadzone (%)",  104, IDC_LDEADZONE, IDC_LDEADZONE_VAL, 0, 90);
+    slider(L"Right stick deadzone (%)", 156, IDC_RDEADZONE, IDC_RDEADZONE_VAL, 0, 90);
+    slider(L"Left stick sensitivity",   208, IDC_LSTICK,    IDC_LSTICK_VAL,    1, 100);
+    slider(L"Right stick sensitivity",  260, IDC_RSTICK,    IDC_RSTICK_VAL,    1, 100);
+
+    // --- Haptics ---
+    cur = &m_tabPages[3];
     make(L"BUTTON", L"Haptic feedback on click",
-         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 770, W, 22, IDC_HAPTIC_CLICK);
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 PX, 100, PW, 22, IDC_HAPTIC_CLICK);
     make(L"BUTTON", L"Haptic feedback on movement / scroll",
-         BS_AUTOCHECKBOX | WS_TABSTOP,                 M, 794, W, 22, IDC_HAPTIC_MOVE);
-    slider(L"Movement tick density", 826, IDC_HAPTIC_INT, IDC_HAPTIC_VAL, 1, 100);
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 PX, 124, PW, 22, IDC_HAPTIC_MOVE);
+    slider(L"Movement tick density", 154, IDC_HAPTIC_INT, IDC_HAPTIC_VAL, 1, 100);
+    make(L"BUTTON", L"Test Haptic", BS_PUSHBUTTON | WS_TABSTOP,
+                                                       PX, 210, PW, 30, IDC_HAPTIC_TEST);
+
+    cur = nullptr;
+    ShowTab(0);
+}
+
+void TrayApp::ShowTab(int index) {
+    for (int i = 0; i < 4; ++i) {
+        int how = (i == index) ? SW_SHOW : SW_HIDE;
+        for (HWND c : m_tabPages[i]) ShowWindow(c, how);
+    }
 }
 
 void TrayApp::RefreshControls() {

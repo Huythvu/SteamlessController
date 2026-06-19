@@ -41,6 +41,7 @@ private:
 
     // Scroll-wheel state
     bool     m_scrollTouching = false;
+    bool     m_scrollPrevClick = false;
     int16_t  m_scrollPrevY    = 0;
     float    m_scrollAccum    = 0.0f;
 
@@ -65,6 +66,7 @@ private:
     static constexpr float HAPTIC_MOVE   = 600.0f;
     static constexpr float HAPTIC_SCROLL = 700.0f;
     static constexpr int   MOVE_JITTER   = 50;   // ignore deltas below this (resting jitter)
+    static constexpr int   SCROLL_JITTER = 45;   // scroll deadzone vs. a resting thumb
 
     // side 0 = right pad, 1 = left pad
     uint8_t  mousePadSide()  const { return static_cast<uint8_t>(m_useLeftTrackpad ? 1 : 0); }
