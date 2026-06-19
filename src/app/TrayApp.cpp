@@ -364,9 +364,9 @@ void TrayApp::CreateControls(HWND hwnd) {
     make(L"BUTTON", L"Use Left Trackpad Instead",
          BS_AUTOCHECKBOX | WS_TABSTOP,                 PX, 196, PW, 22, IDC_LEFT_TRACKPAD);
     slider(L"Mouse sensitivity",  224, IDC_SENS,        IDC_SENS_VAL,    1, 100);
-    slider(L"Mouse deadzone",     274, IDC_MOUSE_DZ,    IDC_MOUSE_DZ_VAL,  0, 240);
+    slider(L"Mouse deadzone",     274, IDC_MOUSE_DZ,    IDC_MOUSE_DZ_VAL,  0, 200);
     slider(L"Scroll sensitivity", 324, IDC_SCROLL_SENS, IDC_SCROLL_VAL,  1, 100);
-    slider(L"Scroll deadzone",    374, IDC_SCROLL_DZ,   IDC_SCROLL_DZ_VAL, 0, 1200);
+    slider(L"Scroll deadzone",    374, IDC_SCROLL_DZ,   IDC_SCROLL_DZ_VAL, 0, 1000);
 
     // --- Sticks ---
     cur = &m_tabPages[2];
@@ -397,10 +397,12 @@ void TrayApp::ShowTab(int index) {
 }
 
 void TrayApp::UpdateBatteryDisplay() {
-    int batt = m_controller ? m_controller->GetBatteryPercent() : -1;
-    wchar_t text[32];
-    if (batt >= 0) swprintf_s(text, L"Battery: %d%%", batt);
-    else           wcscpy_s(text, L"Battery: --");
+    int  batt     = m_controller ? m_controller->GetBatteryPercent() : -1;
+    bool charging = m_controller && m_controller->IsCharging();
+    wchar_t text[48];
+    if (batt < 0)        wcscpy_s(text, L"Battery: --");
+    else if (charging)   swprintf_s(text, L"Battery: %d%% (%s)", batt, batt >= 100 ? L"charged" : L"charging");
+    else                 swprintf_s(text, L"Battery: %d%%", batt);
     SetDlgItemTextW(m_hwnd, IDC_BATTERY, text);
 }
 
@@ -846,9 +848,11 @@ void TrayApp::UpdateTrayIcon(bool connected, bool gameModeActive, bool vigemMiss
                                      : L"Steamless Controller - No controller found";
 
     wchar_t tip[128];
-    int batt = m_controller ? m_controller->GetBatteryPercent() : -1;
-    if (batt >= 0) swprintf_s(tip, L"%s  -  Battery %d%%", base, batt);
-    else           wcscpy_s(tip, base);
+    int  batt     = m_controller ? m_controller->GetBatteryPercent() : -1;
+    bool charging = m_controller && m_controller->IsCharging();
+    if (batt < 0)      wcscpy_s(tip, base);
+    else               swprintf_s(tip, L"%s  -  Battery %d%%%s", base, batt,
+                                   charging ? (batt >= 100 ? L" (charged)" : L" (charging)") : L"");
 
     NOTIFYICONDATAW nid{};
     nid.cbSize = sizeof(nid);

@@ -119,6 +119,10 @@ public:
     void Close();
     bool IsOpen() const { return m_device.IsOpen(); }
 
+    // True when connected over the wired USB cable (i.e. drawing/charging on
+    // USB power), false for the wireless dongle (running on battery).
+    bool IsWired() const { return m_pid == SC2026_PID; }
+
     // Two-step sequence: clears digital mappings + sets trackpads to NONE.
     // Starts the background heartbeat thread on first call.
     bool DisableLizardMode();
@@ -147,4 +151,5 @@ private:
     HidDevice       m_device;
     std::thread     m_heartbeat;
     std::atomic<bool> m_running{false};
+    uint16_t        m_pid = 0;     // PID of the connected device (0 = none)
 };

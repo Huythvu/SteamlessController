@@ -88,6 +88,9 @@ public:
     // (e.g. no report captured yet). Thread-safe.
     int GetBatteryPercent() const;
 
+    // True when on USB cable power (wired) rather than the wireless dongle.
+    bool IsCharging() const;
+
 private:
     void TryOpen();
     void Close(bool restoreLizard);

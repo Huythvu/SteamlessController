@@ -46,6 +46,7 @@ bool SteamController::Open() {
             size_t n = m_device.ReadInputReport(buf, sizeof(buf), /*timeoutMs=*/500);
             if (n > 0 && buf[0] == REPORT_STATE) {
                 printf("Active interface found for PID=%04X.\n", pid);
+                m_pid = pid;
                 return true;
             }
 
@@ -68,6 +69,7 @@ void SteamController::Close() {
     if (m_running.exchange(false) && m_heartbeat.joinable())
         m_heartbeat.join();
     m_device.Close();
+    m_pid = 0;
 }
 
 // ---------------------------------------------------------------------------

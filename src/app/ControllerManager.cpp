@@ -338,6 +338,10 @@ int ControllerManager::GetBatteryPercent() const {
     return m_batteryPercent.load();   // -1 until a 0x43 report arrives
 }
 
+bool ControllerManager::IsCharging() const {
+    return m_connected.load() && g_ctrl && g_ctrl->IsWired();
+}
+
 void ControllerManager::SetButtonAction(int sourceIndex, InputMapper::Action a) {
     std::lock_guard<std::mutex> lock(m_inputMutex);
     m_mapper.SetAction(sourceIndex, a);
