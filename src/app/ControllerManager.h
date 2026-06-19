@@ -110,7 +110,7 @@ private:
     std::atomic<bool>                  m_trackpadSuspended{false};
     bool                               m_hapticOnClick        = false;
     bool                               m_hapticOnMove         = false;
-    int                                m_hapticIntensity      = 60;   // 1..100
+    int                                m_hapticIntensity      = 50;   // 1..100 (50 = baseline)
     int                                m_trackpadSensitivity  = 35;   // 1..100
     int                                m_scrollSensitivity    = 30;   // 1..100
     int                                m_mouseDeadzone        = 50;   // 1..100 (slider pos)

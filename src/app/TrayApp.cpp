@@ -953,7 +953,7 @@ void TrayApp::LoadSettings() {
     m_controller->SetRightStickSensitivity(static_cast<int>(readDword(L"RightStickSens",      50)));
     m_controller->SetHapticOnClick        (readBool(L"HapticOnClick", false));
     m_controller->SetHapticOnMove         (readBool(L"HapticOnMove",  false));
-    m_controller->SetHapticIntensity      (static_cast<int>(readDword(L"HapticIntensity",     60)));
+    m_controller->SetHapticIntensity      (static_cast<int>(readDword(L"HapticDensity",        50)));
 
     // Button mappings: 0xFFFFFFFF sentinel means "not set" -> keep default.
     for (int i = 0; i < InputMapper::kSourceCount; ++i) {
@@ -1004,7 +1004,7 @@ void TrayApp::SaveSettings() {
     writeDword(L"RightDeadzone",       static_cast<DWORD>(m_controller->GetRightDeadzone()));
     writeDword(L"LeftStickSens",       static_cast<DWORD>(m_controller->GetLeftStickSensitivity()));
     writeDword(L"RightStickSens",      static_cast<DWORD>(m_controller->GetRightStickSensitivity()));
-    writeDword(L"HapticIntensity",     static_cast<DWORD>(m_controller->GetHapticIntensity()));
+    writeDword(L"HapticDensity",       static_cast<DWORD>(m_controller->GetHapticIntensity()));
 
     for (int i = 0; i < InputMapper::kSourceCount; ++i) {
         InputMapper::Action a = m_controller->GetButtonAction(i);

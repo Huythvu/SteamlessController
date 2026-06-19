@@ -16,10 +16,10 @@ static float ScrollSensFromPos(int pos) {
     return 0.010f + (pos - 1) / 99.0f * (0.200f - 0.010f);
 }
 
-// Haptic "density": higher slider = more ticks per movement = shorter distance
-// between ticks. 1 -> very sparse, 100 -> dense.
+// Haptic "density": 1..100 where 50 = baseline spacing. Higher pos = denser
+// (shorter distance between ticks), lower = sparser. baseline * 2^((50-pos)/50).
 static float MoveTickFromPos(int pos) {
-    return 8000.0f - (pos - 1) / 99.0f * (8000.0f - 600.0f);
+    return 8000.0f * std::pow(2.0f, (50 - pos) / 50.0f);
 }
 
 // Deadzone: a 1..100 slider where 50 = baseline, 100 = 2x, 1 ~= 0.5x.
