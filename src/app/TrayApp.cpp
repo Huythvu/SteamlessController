@@ -364,9 +364,9 @@ void TrayApp::CreateControls(HWND hwnd) {
     make(L"BUTTON", L"Use Left Trackpad Instead",
          BS_AUTOCHECKBOX | WS_TABSTOP,                 PX, 196, PW, 22, IDC_LEFT_TRACKPAD);
     slider(L"Mouse sensitivity",  224, IDC_SENS,        IDC_SENS_VAL,    1, 100);
-    slider(L"Mouse deadzone",     274, IDC_MOUSE_DZ,    IDC_MOUSE_DZ_VAL,  0, 100);
+    slider(L"Mouse deadzone",     274, IDC_MOUSE_DZ,    IDC_MOUSE_DZ_VAL,  0, 240);
     slider(L"Scroll sensitivity", 324, IDC_SCROLL_SENS, IDC_SCROLL_VAL,  1, 100);
-    slider(L"Scroll deadzone",    374, IDC_SCROLL_DZ,   IDC_SCROLL_DZ_VAL, 0, 1000);
+    slider(L"Scroll deadzone",    374, IDC_SCROLL_DZ,   IDC_SCROLL_DZ_VAL, 0, 1200);
 
     // --- Sticks ---
     cur = &m_tabPages[2];
@@ -941,8 +941,8 @@ void TrayApp::LoadSettings() {
     m_controller->SetUseLeftTrackpad     (readBool(L"UseLeftTrackpad", false));
     m_controller->SetTrackpadSensitivity (static_cast<int>(readDword(L"TrackpadSensitivity", 35)));
     m_controller->SetScrollSensitivity   (static_cast<int>(readDword(L"ScrollSensitivity",   30)));
-    m_controller->SetMouseDeadzone       (static_cast<int>(readDword(L"MouseDeadzone",        20)));
-    m_controller->SetScrollDeadzone      (static_cast<int>(readDword(L"ScrollDeadzone",      120)));
+    m_controller->SetMouseDeadzone       (static_cast<int>(readDword(L"MouseDeadzone",       120)));
+    m_controller->SetScrollDeadzone      (static_cast<int>(readDword(L"ScrollDeadzone",      600)));
     m_controller->SetLeftDeadzone        (static_cast<int>(readDword(L"LeftDeadzone",         10)));
     m_controller->SetRightDeadzone       (static_cast<int>(readDword(L"RightDeadzone",        10)));
     m_controller->SetLeftStickSensitivity (static_cast<int>(readDword(L"LeftStickSens",       50)));

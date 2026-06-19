@@ -189,7 +189,7 @@ void ControllerManager::SetScrollSensitivity(int pos) {
 
 void ControllerManager::SetMouseDeadzone(int units) {
     if (units < 0)    units = 0;
-    if (units > 1000) units = 1000;
+    if (units > 2000) units = 2000;
     m_mouseDeadzone = units;
     std::lock_guard<std::mutex> lock(m_inputMutex);
     m_trackpad.SetMouseDeadzone(units);
@@ -197,7 +197,7 @@ void ControllerManager::SetMouseDeadzone(int units) {
 
 void ControllerManager::SetScrollDeadzone(int units) {
     if (units < 0)    units = 0;
-    if (units > 1000) units = 1000;
+    if (units > 2000) units = 2000;
     m_scrollDeadzone = units;
     std::lock_guard<std::mutex> lock(m_inputMutex);
     m_trackpad.SetScrollDeadzone(units);
@@ -291,6 +291,11 @@ void ControllerManager::ReadLoop() {
         // dongles that remain present after the controller slot disappears.
         if (deviceLost) { lost = true; break; }
         if (n == 0) continue;
+        // The secondary (0x43) report carries battery percent in byte 2.
+        if (buf[0] == SteamController::REPORT_SECONDARY && n >= 3) {
+            m_batteryPercent.store(buf[2] > 100 ? 100 : buf[2]);
+            continue;
+        }
         if (buf[0] != SteamController::REPORT_STATE) continue;
         {
             std::lock_guard<std::mutex> lock(m_inputMutex);
@@ -330,11 +335,7 @@ size_t ControllerManager::GetLatestReport(uint8_t* out, size_t outSize) const {
 }
 
 int ControllerManager::GetBatteryPercent() const {
-    std::lock_guard<std::mutex> lock(m_reportMutex);
-    if (m_lastReportLen < 46) return -1;          // need bytes 44..45
-    unsigned raw = m_lastReport[44] | (m_lastReport[45] << 8);  // 0xFFFF at full
-    int pct = static_cast<int>((raw * 100u) / 0xFFFFu);
-    return pct < 0 ? 0 : (pct > 100 ? 100 : pct);
+    return m_batteryPercent.load();   // -1 until a 0x43 report arrives
 }
 
 void ControllerManager::SetButtonAction(int sourceIndex, InputMapper::Action a) {

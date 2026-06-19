@@ -110,8 +110,8 @@ private:
     int                                m_hapticIntensity      = 60;   // 1..100
     int                                m_trackpadSensitivity  = 35;   // 1..100
     int                                m_scrollSensitivity    = 30;   // 1..100
-    int                                m_mouseDeadzone        = 20;   // 0..500
-    int                                m_scrollDeadzone       = 120;  // 0..500
+    int                                m_mouseDeadzone        = 120;  // 0..2000
+    int                                m_scrollDeadzone       = 600;  // 0..2000
     int                                m_lDeadzone            = 10;   // 0..90 (%)
     int                                m_rDeadzone            = 10;   // 0..90 (%)
     int                                m_lStickSens           = 50;   // 1..100
@@ -126,4 +126,5 @@ private:
     mutable std::mutex                 m_reportMutex;
     uint8_t                            m_lastReport[64] = {};
     size_t                             m_lastReportLen  = 0;
+    std::atomic<int>                   m_batteryPercent{-1};   // from 0x43 reports
 };
