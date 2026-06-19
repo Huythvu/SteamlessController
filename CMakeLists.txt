@@ -46,6 +46,23 @@ if (MSVC)
     target_compile_options(RawControllerProbe PRIVATE /W4)
 endif()
 
+# Dear ImGui (vendored) with the Win32 + DirectX 11 backend
+add_library(imgui STATIC
+    third_party/imgui/imgui.cpp
+    third_party/imgui/imgui_draw.cpp
+    third_party/imgui/imgui_tables.cpp
+    third_party/imgui/imgui_widgets.cpp
+    third_party/imgui/backends/imgui_impl_win32.cpp
+    third_party/imgui/backends/imgui_impl_dx11.cpp
+)
+target_include_directories(imgui PUBLIC
+    third_party/imgui
+    third_party/imgui/backends
+)
+if (MSVC)
+    target_compile_options(imgui PRIVATE /W0)
+endif()
+
 # System tray app (no console window)
 add_executable(SteamlessController WIN32
     src/app/main.cpp
@@ -57,7 +74,8 @@ add_executable(SteamlessController WIN32
     resources/app.rc
 )
 target_include_directories(SteamlessController PRIVATE resources)
-target_link_libraries(SteamlessController PRIVATE SteamController ViGEmClient comctl32)
+target_link_libraries(SteamlessController PRIVATE
+    SteamController ViGEmClient comctl32 imgui d3d11 dxgi d3dcompiler)
 if (MSVC)
     target_compile_options(SteamlessController PRIVATE /W4 /WX)
     # We embed our own manifest via app.rc; stop the linker generating a
