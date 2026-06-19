@@ -7,6 +7,8 @@
 #include <dwmapi.h>
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
+#include <string>
 
 #ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
@@ -94,7 +96,7 @@ bool TrayApp::Init(HINSTANCE hInstance) {
 
     m_hwnd = CreateWindowExW(0, WNDCLASS_NAME, L"SteamlessController",
                              WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
-                             900, 560, nullptr, nullptr, hInstance, nullptr);
+                             1350, 840, nullptr, nullptr, hInstance, nullptr);
     if (!m_hwnd) return false;
 
     // Dark non-client area (title bar / borders) to match the ImGui theme.
@@ -121,6 +123,8 @@ bool TrayApp::Init(HINSTANCE hInstance) {
     style.GrabRounding   = 4.0f;
     style.WindowPadding  = ImVec2(12, 12);
     style.ItemSpacing    = ImVec2(10, 8);
+    style.ScaleAllSizes(1.5f);    // ~50% larger UI
+    io.FontGlobalScale = 1.5f;
     ImGui_ImplWin32_Init(m_hwnd);
     ImGui_ImplDX11_Init(m_device, m_ctx);
 
@@ -309,7 +313,7 @@ void TrayApp::DrawUI() {
     DrawTopBar();
     ImGui::Separator();
 
-    ImGui::BeginChild("sidebar", ImVec2(170, 0), ImGuiChildFlags_Border);
+    ImGui::BeginChild("sidebar", ImVec2(240, 0), ImGuiChildFlags_Border);
     DrawProfilesSidebar();
     ImGui::EndChild();
 
@@ -458,12 +462,22 @@ void TrayApp::DrawTabs() {
 
         ImGui::Spacing();
         ImGui::Separator();
-        ImGui::TextDisabled("A live deadzone view arrives in the next update.");
+        ImGui::TextDisabled("LIVE (dot = position, red ring = deadzone)");
+        uint8_t rep[64];
+        size_t n = c.GetLatestReport(rep, sizeof(rep));
+        auto axis = [&](int off) -> float {
+            if (n < static_cast<size_t>(off) + 2) return 0.0f;
+            int16_t v; std::memcpy(&v, rep + off, 2);
+            return v / 32767.0f;
+        };
+        DrawStickView(axis(10), axis(12), c.GetLeftDeadzone()  / 100.0f);
+        ImGui::SameLine(0, 24);
+        DrawStickView(axis(14), axis(16), c.GetRightDeadzone() / 100.0f);
         ImGui::EndTabItem();
     }
 
     if (ImGui::BeginTabItem("Controller")) {
-        ImGui::TextDisabled("Live diagram + click-to-remap arrive in the next update.");
+        DrawControllerTab();
         ImGui::EndTabItem();
     }
 
@@ -506,6 +520,126 @@ void TrayApp::DrawTabs() {
     }
 
     ImGui::EndTabBar();
+}
+
+// Human-readable label for a mapped action (searches the target tables).
+static std::string ActionLabel(InputMapper::Action a) {
+    if (a.type == InputMapper::Type::None) return "-";
+    const InputMapper::Target* t = nullptr; int cnt = 0;
+    const char* prefix = "";
+    if (a.type == InputMapper::Type::Xbox) {
+        t = InputMapper::kXboxTargets; cnt = InputMapper::kXboxTargetCount;
+    } else {
+        t = InputMapper::kKeyTargets;  cnt = InputMapper::kKeyTargetCount;
+        prefix = "Key ";
+    }
+    for (int i = 0; i < cnt; ++i)
+        if (t[i].type == a.type && t[i].value == a.value)
+            return std::string(prefix) + Narrow(t[i].name);
+    return "?";
+}
+
+// Controller tab: a live button board (lights up on press) that doubles as
+// the remapper -- click any button to pick a new Xbox/keyboard target.
+void TrayApp::DrawControllerTab() {
+    uint8_t rep[64];
+    size_t n = m_controller->GetLatestReport(rep, sizeof(rep));
+
+    if (ImGui::Button("Reset all mappings")) {
+        m_controller->ResetButtonMappings();
+        SaveSettings();
+    }
+    ImGui::SameLine(0, 16);
+    ImGui::TextDisabled("Lit = pressed now. Click a button to remap it.");
+    ImGui::Spacing();
+
+    bool openRemap = false;
+    if (ImGui::BeginTable("btns", 2, ImGuiTableFlags_SizingStretchSame)) {
+        for (int i = 0; i < InputMapper::kSourceCount; ++i) {
+            const InputMapper::Source& s = InputMapper::kSources[i];
+            bool pressed = (n > s.byteIndex) && (rep[s.byteIndex] & s.mask) != 0;
+
+            ImGui::TableNextColumn();
+            std::string label = Narrow(s.name) + "   ->   " +
+                                ActionLabel(m_controller->GetButtonAction(i)) +
+                                "##src" + std::to_string(i);
+            if (pressed)
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.55f, 0.95f, 1.0f));
+            if (ImGui::Button(label.c_str(), ImVec2(-1, 0))) {
+                m_remapIndex = i;
+                openRemap = true;
+            }
+            if (pressed) ImGui::PopStyleColor();
+        }
+        ImGui::EndTable();
+    }
+
+    ImGui::Spacing();
+    auto trig = [&](int off) -> float {
+        if (n < static_cast<size_t>(off) + 2) return 0.0f;
+        int16_t v; std::memcpy(&v, rep + off, 2);
+        float f = v / 32767.0f;
+        return f < 0 ? 0 : (f > 1 ? 1 : f);
+    };
+    ImGui::TextDisabled("TRIGGERS");
+    ImGui::ProgressBar(trig(6), ImVec2(-1, 0), "");
+    ImGui::ProgressBar(trig(8), ImVec2(-1, 0), "");
+
+    if (openRemap) ImGui::OpenPopup("remap");
+    if (ImGui::BeginPopup("remap")) {
+        if (m_remapIndex >= 0) {
+            ImGui::TextDisabled("%s", Narrow(InputMapper::kSources[m_remapIndex].name).c_str());
+            ImGui::Separator();
+            auto apply = [&](InputMapper::Action a) {
+                m_controller->SetButtonAction(m_remapIndex, a);
+                SaveSettings();
+                ImGui::CloseCurrentPopup();
+            };
+            if (ImGui::Selectable("None")) apply({InputMapper::Type::None, 0});
+            ImGui::TextDisabled("XBOX");
+            for (int i = 0; i < InputMapper::kXboxTargetCount; ++i) {
+                const auto& t = InputMapper::kXboxTargets[i];
+                if (ImGui::Selectable(Narrow(t.name).c_str()))
+                    apply({t.type, t.value});
+            }
+            ImGui::TextDisabled("KEYBOARD");
+            for (int i = 0; i < InputMapper::kKeyTargetCount; ++i) {
+                const auto& t = InputMapper::kKeyTargets[i];
+                std::string lbl = std::string("Key ") + Narrow(t.name) +
+                                  "##k" + std::to_string(i);
+                if (ImGui::Selectable(lbl.c_str()))
+                    apply({t.type, t.value});
+            }
+        }
+        ImGui::EndPopup();
+    }
+}
+
+// A square stick view: outer bounds, the circular deadzone ring, and a dot
+// at the current normalized position (nx,ny in -1..1, +y = up).
+void TrayApp::DrawStickView(float nx, float ny, float dz) {
+    const float sz = 160.0f;
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImVec2 c = ImVec2(p.x + sz / 2, p.y + sz / 2);
+    float r = sz / 2 - 2;
+
+    ImU32 box    = ImGui::GetColorU32(ImGuiCol_FrameBg);
+    ImU32 border = ImGui::GetColorU32(ImGuiCol_Border);
+    dl->AddRectFilled(p, ImVec2(p.x + sz, p.y + sz), box, 6.0f);
+    dl->AddRect(p, ImVec2(p.x + sz, p.y + sz), border, 6.0f);
+    dl->AddCircle(c, r, border, 48);
+    dl->AddLine(ImVec2(c.x - r, c.y), ImVec2(c.x + r, c.y), border);
+    dl->AddLine(ImVec2(c.x, c.y - r), ImVec2(c.x, c.y + r), border);
+    if (dz > 0.0f)
+        dl->AddCircle(c, r * dz, IM_COL32(210, 80, 80, 200), 48);
+
+    float px = nx < -1 ? -1 : (nx > 1 ? 1 : nx);
+    float py = ny < -1 ? -1 : (ny > 1 ? 1 : ny);
+    ImVec2 dot = ImVec2(c.x + px * r, c.y - py * r);
+    dl->AddCircleFilled(dot, 6.0f, IM_COL32(80, 180, 255, 255));
+
+    ImGui::Dummy(ImVec2(sz, sz));
 }
 
 // ---------------------------------------------------------------------------

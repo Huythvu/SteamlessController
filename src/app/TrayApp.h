@@ -33,6 +33,8 @@ private:
     void DrawTopBar();
     void DrawProfilesSidebar();
     void DrawTabs();
+    void DrawControllerTab();
+    void DrawStickView(float nx, float ny, float dz);
 
     // --- Tray ---
     void AddTrayIcon();
@@ -77,6 +79,7 @@ private:
 
     // UI scratch state
     int                                m_currentTab = 0;
+    int                                m_remapIndex = -1;   // source being remapped
     char                               m_profileNameBuf[64] = {};
 
     // Tray state marshaled from the controller callback (any thread).
