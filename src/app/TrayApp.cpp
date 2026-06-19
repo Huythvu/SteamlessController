@@ -353,6 +353,13 @@ void TrayApp::DrawProfilesSidebar() {
     ImGui::TextUnformatted("PROFILES");
     ImGui::Separator();
 
+    // Reserve room at the bottom for the editing controls so the list scrolls
+    // instead of pushing the buttons around. With the buttons anchored, you
+    // can spam-click Delete without the target sliding out from under you.
+    float footer = ImGui::GetFrameHeightWithSpacing() * 3.0f +
+                   ImGui::GetStyle().ItemSpacing.y * 2.0f;
+    ImGui::BeginChild("plist", ImVec2(0, -footer), false);
+
     // Click to switch; drag a row up/down to reorder (persisted immediately).
     auto profiles = ListProfiles();
     for (int i = 0; i < static_cast<int>(profiles.size()); ++i) {
@@ -370,6 +377,7 @@ void TrayApp::DrawProfilesSidebar() {
             }
         }
     }
+    ImGui::EndChild();
 
     ImGui::Separator();
     ImGui::SetNextItemWidth(-1.0f);
@@ -390,31 +398,106 @@ void TrayApp::DrawProfilesSidebar() {
 void TrayApp::DrawTabs() {
     if (!ImGui::BeginTabBar("tabs")) return;
 
+    // Small helpers: a toggle / slider that pushes the value into the
+    // controller and persists settings only when the user actually changes it.
+    auto& c = *m_controller;
+    auto toggle = [&](const char* label, bool cur, void (ControllerManager::*set)(bool)) {
+        bool v = cur;
+        if (ImGui::Checkbox(label, &v)) { (c.*set)(v); SaveSettings(); }
+    };
+    auto slider = [&](const char* label, int cur, int lo, int hi,
+                      void (ControllerManager::*set)(int)) {
+        int v = cur;
+        ImGui::SetNextItemWidth(220);
+        if (ImGui::SliderInt(label, &v, lo, hi)) { (c.*set)(v); SaveSettings(); }
+    };
+
     if (ImGui::BeginTabItem("Trackpad")) {
-        ImGui::TextDisabled("Trackpad settings arrive in the next update.");
+        ImGui::TextDisabled("MOUSE");
+        toggle("Trackpad as mouse", c.IsTrackpadMouseEnabled(),
+               &ControllerManager::SetTrackpadMouseEnabled);
+        toggle("Use the left trackpad for the mouse", c.IsUseLeftTrackpad(),
+               &ControllerManager::SetUseLeftTrackpad);
+        ImGui::BeginDisabled(!c.IsTrackpadMouseEnabled());
+        slider("Mouse sensitivity", c.GetTrackpadSensitivity(), 1, 100,
+               &ControllerManager::SetTrackpadSensitivity);
+        slider("Mouse deadzone", c.GetMouseDeadzone(), 1, 100,
+               &ControllerManager::SetMouseDeadzone);
+        ImGui::EndDisabled();
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::TextDisabled("SCROLL");
+        toggle("Scroll wheel (other trackpad)", c.IsScrollWheelEnabled(),
+               &ControllerManager::SetScrollWheelEnabled);
+        ImGui::BeginDisabled(!c.IsScrollWheelEnabled());
+        toggle("Invert scroll direction", c.IsInvertScroll(),
+               &ControllerManager::SetInvertScroll);
+        slider("Scroll sensitivity", c.GetScrollSensitivity(), 1, 100,
+               &ControllerManager::SetScrollSensitivity);
+        slider("Scroll deadzone", c.GetScrollDeadzone(), 1, 100,
+               &ControllerManager::SetScrollDeadzone);
+        ImGui::EndDisabled();
         ImGui::EndTabItem();
     }
+
     if (ImGui::BeginTabItem("Sticks")) {
-        ImGui::TextDisabled("Stick settings + live view arrive in the next update.");
+        ImGui::TextDisabled("LEFT STICK");
+        slider("Deadzone##l", c.GetLeftDeadzone(), 0, 90,
+               &ControllerManager::SetLeftDeadzone);
+        slider("Sensitivity##l", c.GetLeftStickSensitivity(), 1, 100,
+               &ControllerManager::SetLeftStickSensitivity);
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::TextDisabled("RIGHT STICK");
+        slider("Deadzone##r", c.GetRightDeadzone(), 0, 90,
+               &ControllerManager::SetRightDeadzone);
+        slider("Sensitivity##r", c.GetRightStickSensitivity(), 1, 100,
+               &ControllerManager::SetRightStickSensitivity);
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::TextDisabled("A live deadzone view arrives in the next update.");
         ImGui::EndTabItem();
     }
+
     if (ImGui::BeginTabItem("Controller")) {
         ImGui::TextDisabled("Live diagram + click-to-remap arrive in the next update.");
         ImGui::EndTabItem();
     }
+
     if (ImGui::BeginTabItem("Haptics")) {
-        ImGui::TextDisabled("Haptic settings arrive in the next update.");
+        ImGui::TextDisabled("Local trackpad feedback (the pad you're using).");
+        ImGui::Spacing();
+        toggle("Buzz on click", c.IsHapticOnClick(),
+               &ControllerManager::SetHapticOnClick);
+        toggle("Buzz on mouse / scroll movement", c.IsHapticOnMove(),
+               &ControllerManager::SetHapticOnMove);
+        ImGui::BeginDisabled(!c.IsHapticOnClick() && !c.IsHapticOnMove());
+        slider("Intensity (clicks per movement)", c.GetHapticIntensity(), 1, 100,
+               &ControllerManager::SetHapticIntensity);
+        ImGui::EndDisabled();
+
+        ImGui::Spacing();
+        ImGui::BeginDisabled(!c.IsConnected());
+        if (ImGui::Button("Test haptic")) c.TestHaptic();
+        ImGui::EndDisabled();
         ImGui::EndTabItem();
     }
+
     if (ImGui::BeginTabItem("General")) {
-        bool autoEnable = m_controller->IsAutoEnable();
+        bool autoEnable = c.IsAutoEnable();
         if (ImGui::Checkbox("Auto-enable Steamless Mode", &autoEnable)) {
-            m_controller->SetAutoEnable(autoEnable);
+            c.SetAutoEnable(autoEnable);
             SaveSettings();
         }
         bool startup = IsStartupEnabled();
         if (ImGui::Checkbox("Start with Windows", &startup))
             SetStartupEnabled(startup);
+
+        toggle("Enable back grip buttons", c.IsBackButtonsEnabled(),
+               &ControllerManager::SetBackButtonsEnabled);
 
         ImGui::Spacing();
         ImGui::Separator();
@@ -747,9 +830,9 @@ void TrayApp::CreateProfile(const std::wstring& name) {
     if (name.empty() || ProfileExists(name)) return;
     m_activeProfile = name;
     SaveSettings();
-    // Newest profile goes to the top of the list.
+    // Newest profile goes to the bottom of the list.
     auto order = ReadProfileOrder();
-    order.insert(order.begin(), name);
+    order.push_back(name);
     SaveProfileOrder(order);
 }
 
@@ -764,7 +847,7 @@ void TrayApp::RenameProfile(const std::wstring& newName) {
     auto order = ReadProfileOrder();
     bool replaced = false;
     for (auto& n : order) if (n == oldName) { n = newName; replaced = true; break; }
-    if (!replaced) order.insert(order.begin(), newName);
+    if (!replaced) order.push_back(newName);
     SaveProfileOrder(order);
 }
 
