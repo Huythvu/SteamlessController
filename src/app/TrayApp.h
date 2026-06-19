@@ -34,6 +34,7 @@ private:
     void RefreshControls();
     void ShowMainWindow();
     void ShowTab(int index);
+    void UpdateBatteryDisplay();
 
     void AddTrayIcon();
     void RemoveTrayIcon();
@@ -68,7 +69,9 @@ private:
     static constexpr UINT IDC_MAPPING       = 1004;
     static constexpr UINT IDC_HAPTIC_TEST   = 1005;
     static constexpr UINT IDC_TAB           = 1006;
+    static constexpr UINT IDC_BATTERY       = 1007;
     static constexpr UINT MON_TIMER         = 1;
+    static constexpr UINT BATT_TIMER        = 2;
 
     // Mapping window: one combo per source button, plus a reset button.
     static constexpr UINT IDC_MAP_BASE      = 3000;   // .. 3000 + kSourceCount-1

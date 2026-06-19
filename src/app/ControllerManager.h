@@ -84,6 +84,10 @@ public:
     // number of bytes copied, or 0 if none captured yet. Thread-safe.
     size_t GetLatestReport(uint8_t* out, size_t outSize) const;
 
+    // Approximate battery percentage from the latest report, or -1 if unknown
+    // (e.g. no report captured yet). Thread-safe.
+    int GetBatteryPercent() const;
+
 private:
     void TryOpen();
     void Close(bool restoreLizard);

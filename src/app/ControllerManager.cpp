@@ -188,16 +188,16 @@ void ControllerManager::SetScrollSensitivity(int pos) {
 }
 
 void ControllerManager::SetMouseDeadzone(int units) {
-    if (units < 0)   units = 0;
-    if (units > 500) units = 500;
+    if (units < 0)    units = 0;
+    if (units > 1000) units = 1000;
     m_mouseDeadzone = units;
     std::lock_guard<std::mutex> lock(m_inputMutex);
     m_trackpad.SetMouseDeadzone(units);
 }
 
 void ControllerManager::SetScrollDeadzone(int units) {
-    if (units < 0)   units = 0;
-    if (units > 500) units = 500;
+    if (units < 0)    units = 0;
+    if (units > 1000) units = 1000;
     m_scrollDeadzone = units;
     std::lock_guard<std::mutex> lock(m_inputMutex);
     m_trackpad.SetScrollDeadzone(units);
@@ -327,6 +327,14 @@ size_t ControllerManager::GetLatestReport(uint8_t* out, size_t outSize) const {
     size_t len = m_lastReportLen < outSize ? m_lastReportLen : outSize;
     std::memcpy(out, m_lastReport, len);
     return len;
+}
+
+int ControllerManager::GetBatteryPercent() const {
+    std::lock_guard<std::mutex> lock(m_reportMutex);
+    if (m_lastReportLen < 46) return -1;          // need bytes 44..45
+    unsigned raw = m_lastReport[44] | (m_lastReport[45] << 8);  // 0xFFFF at full
+    int pct = static_cast<int>((raw * 100u) / 0xFFFFu);
+    return pct < 0 ? 0 : (pct > 100 ? 100 : pct);
 }
 
 void ControllerManager::SetButtonAction(int sourceIndex, InputMapper::Action a) {

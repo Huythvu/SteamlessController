@@ -113,6 +113,7 @@ bool TrayApp::Init(HINSTANCE hInstance) {
 
     LoadSettings();
     AddTrayIcon();
+    SetTimer(m_hwnd, BATT_TIMER, 5000, nullptr);   // periodic battery / tooltip refresh
     return true;
 }
 
@@ -275,6 +276,13 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             m_controller->OnDeviceChange();
         return TRUE;
 
+    case WM_TIMER:
+        if (wp == BATT_TIMER) {
+            UpdateBatteryDisplay();
+            UpdateTrayIcon(m_controller->IsConnected(), m_controller->IsGameModeActive(), false);
+        }
+        return 0;
+
     case WM_DESTROY:
         PostQuitMessage(0);
         return 0;
@@ -335,12 +343,13 @@ void TrayApp::CreateControls(HWND hwnd) {
 
     // --- General ---
     cur = &m_tabPages[0];
+    make(L"STATIC", L"Battery: --", SS_LEFT,           PX, 100, PW, 18, IDC_BATTERY);
     make(L"BUTTON", L"Start with Windows",
-         BS_AUTOCHECKBOX | WS_TABSTOP,                 PX, 100, PW, 22, IDC_STARTUP);
+         BS_AUTOCHECKBOX | WS_TABSTOP,                 PX, 128, PW, 22, IDC_STARTUP);
     make(L"BUTTON", L"Input Monitor", BS_PUSHBUTTON | WS_TABSTOP,
-                                                       PX, 132, PW, 30, IDC_MONITOR);
+                                                       PX, 160, PW, 30, IDC_MONITOR);
     make(L"BUTTON", L"Button Mapping", BS_PUSHBUTTON | WS_TABSTOP,
-                                                       PX, 168, PW, 30, IDC_MAPPING);
+                                                       PX, 196, PW, 30, IDC_MAPPING);
 
     // --- Trackpad ---
     cur = &m_tabPages[1];
@@ -354,10 +363,10 @@ void TrayApp::CreateControls(HWND hwnd) {
          BS_AUTOCHECKBOX | WS_TABSTOP,                 PX, 172, PW, 22, IDC_BACKBUTTONS);
     make(L"BUTTON", L"Use Left Trackpad Instead",
          BS_AUTOCHECKBOX | WS_TABSTOP,                 PX, 196, PW, 22, IDC_LEFT_TRACKPAD);
-    slider(L"Mouse sensitivity",  224, IDC_SENS,        IDC_SENS_VAL,   1, 100);
-    slider(L"Mouse deadzone",     274, IDC_MOUSE_DZ,    IDC_MOUSE_DZ_VAL,  0, 500);
-    slider(L"Scroll sensitivity", 324, IDC_SCROLL_SENS, IDC_SCROLL_VAL, 1, 100);
-    slider(L"Scroll deadzone",    374, IDC_SCROLL_DZ,   IDC_SCROLL_DZ_VAL, 0, 500);
+    slider(L"Mouse sensitivity",  224, IDC_SENS,        IDC_SENS_VAL,    1, 100);
+    slider(L"Mouse deadzone",     274, IDC_MOUSE_DZ,    IDC_MOUSE_DZ_VAL,  0, 100);
+    slider(L"Scroll sensitivity", 324, IDC_SCROLL_SENS, IDC_SCROLL_VAL,  1, 100);
+    slider(L"Scroll deadzone",    374, IDC_SCROLL_DZ,   IDC_SCROLL_DZ_VAL, 0, 1000);
 
     // --- Sticks ---
     cur = &m_tabPages[2];
@@ -385,6 +394,14 @@ void TrayApp::ShowTab(int index) {
         int how = (i == index) ? SW_SHOW : SW_HIDE;
         for (HWND c : m_tabPages[i]) ShowWindow(c, how);
     }
+}
+
+void TrayApp::UpdateBatteryDisplay() {
+    int batt = m_controller ? m_controller->GetBatteryPercent() : -1;
+    wchar_t text[32];
+    if (batt >= 0) swprintf_s(text, L"Battery: %d%%", batt);
+    else           wcscpy_s(text, L"Battery: --");
+    SetDlgItemTextW(m_hwnd, IDC_BATTERY, text);
 }
 
 void TrayApp::RefreshControls() {
@@ -433,6 +450,8 @@ void TrayApp::RefreshControls() {
     setSlider(IDC_LSTICK,      IDC_LSTICK_VAL,    m_controller->GetLeftStickSensitivity());
     setSlider(IDC_RSTICK,      IDC_RSTICK_VAL,    m_controller->GetRightStickSensitivity());
     setSlider(IDC_HAPTIC_INT,  IDC_HAPTIC_VAL,    m_controller->GetHapticIntensity());
+
+    UpdateBatteryDisplay();
 }
 
 void TrayApp::ShowMainWindow() {
@@ -822,9 +841,14 @@ void TrayApp::UpdateTrayIcon(bool connected, bool gameModeActive, bool vigemMiss
     if (vigemMissing) { ShowViGEmBalloon(); return; }
     bool gameModeOn = gameModeActive;
 
-    const wchar_t* tip = gameModeOn  ? L"Steamless Controller - Steamless Mode ON"
-                       : connected   ? L"Steamless Controller - Connected (Steamless Mode OFF)"
+    const wchar_t* base = gameModeOn ? L"Steamless Controller - Steamless Mode ON"
+                        : connected  ? L"Steamless Controller - Connected (Steamless Mode OFF)"
                                      : L"Steamless Controller - No controller found";
+
+    wchar_t tip[128];
+    int batt = m_controller ? m_controller->GetBatteryPercent() : -1;
+    if (batt >= 0) swprintf_s(tip, L"%s  -  Battery %d%%", base, batt);
+    else           wcscpy_s(tip, base);
 
     NOTIFYICONDATAW nid{};
     nid.cbSize = sizeof(nid);
