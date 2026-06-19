@@ -2,6 +2,7 @@
 #include <Windows.h>
 #include <memory>
 #include <vector>
+#include <string>
 #include <cstdint>
 #include <atomic>
 
@@ -46,6 +47,17 @@ private:
     bool IsStartupEnabled() const;
     void SetStartupEnabled(bool enabled);
 
+    // Profiles
+    std::wstring ProfilePath() const;
+    void LoadProfileSettings(HKEY key);
+    void SaveProfileSettings(HKEY key);
+    std::vector<std::wstring> ListProfiles() const;
+    void RefreshProfileCombo();
+    void SwitchProfile(const std::wstring& name);
+    void CreateProfile(const std::wstring& name);
+    void RenameProfile(const std::wstring& newName);
+    void DeleteProfile();
+
     HWND                               m_hwnd      = nullptr;
     HINSTANCE                          m_hInstance = nullptr;
     UINT                               m_wmTaskbar = 0;
@@ -55,7 +67,8 @@ private:
     HWND                               m_monitorHwnd = nullptr;
     HWND                               m_mappingHwnd = nullptr;
     HWND                               m_tab         = nullptr;
-    std::vector<HWND>                  m_tabPages[4];
+    std::vector<HWND>                  m_tabPages[5];
+    std::wstring                       m_activeProfile = L"Default";
     HDEVNOTIFY                         m_devNotify = nullptr;
     std::unique_ptr<ControllerManager> m_controller;
     std::atomic_bool                   m_pendingConnected{false};
@@ -70,6 +83,10 @@ private:
     static constexpr UINT IDC_HAPTIC_TEST   = 1005;
     static constexpr UINT IDC_TAB           = 1006;
     static constexpr UINT IDC_BATTERY       = 1007;
+    static constexpr UINT IDC_PROFILE_COMBO = 1008;
+    static constexpr UINT IDC_PROFILE_NEW   = 1009;
+    static constexpr UINT IDC_PROFILE_RENAME= 1010;
+    static constexpr UINT IDC_PROFILE_DELETE= 1011;
     static constexpr UINT MON_TIMER         = 1;
     static constexpr UINT BATT_TIMER        = 2;
 

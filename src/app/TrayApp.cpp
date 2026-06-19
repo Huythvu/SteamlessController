@@ -112,6 +112,7 @@ bool TrayApp::Init(HINSTANCE hInstance) {
         });
 
     LoadSettings();
+    RefreshProfileCombo();
     m_controller->ApplyAutoEnable();   // turn on now if already connected
     AddTrayIcon();
     SetTimer(m_hwnd, BATT_TIMER, 5000, nullptr);   // periodic battery / tooltip refresh
@@ -168,6 +169,32 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         switch (LOWORD(wp)) {
         case IDM_OPEN:
             ShowMainWindow();
+            break;
+        case IDC_PROFILE_COMBO:
+            if (HIWORD(wp) == CBN_SELCHANGE) {
+                HWND combo = reinterpret_cast<HWND>(lp);
+                int i = static_cast<int>(SendMessageW(combo, CB_GETCURSEL, 0, 0));
+                if (i >= 0) {
+                    wchar_t buf[128];
+                    SendMessageW(combo, CB_GETLBTEXT, i, reinterpret_cast<LPARAM>(buf));
+                    SwitchProfile(buf);
+                }
+            }
+            break;
+        case IDC_PROFILE_NEW: {
+            wchar_t buf[128];
+            GetDlgItemTextW(hwnd, IDC_PROFILE_COMBO, buf, 128);
+            CreateProfile(buf);
+            break;
+        }
+        case IDC_PROFILE_RENAME: {
+            wchar_t buf[128];
+            GetDlgItemTextW(hwnd, IDC_PROFILE_COMBO, buf, 128);
+            RenameProfile(buf);
+            break;
+        }
+        case IDC_PROFILE_DELETE:
+            DeleteProfile();
             break;
         case IDC_MONITOR:
             ShowMonitor();
@@ -338,16 +365,31 @@ void TrayApp::CreateControls(HWND hwnd) {
     // Tab control fills the rest of the window.
     m_tab = make(WC_TABCONTROLW, L"", WS_TABSTOP | WS_VISIBLE,
                  10, 70, WIN_W - 20, WIN_H - 80, IDC_TAB);
-    const wchar_t* tabs[4] = { L"General", L"Trackpad", L"Sticks", L"Haptics" };
-    for (int i = 0; i < 4; ++i) {
+    const wchar_t* tabs[5] = { L"Profiles", L"General", L"Trackpad", L"Sticks", L"Haptics" };
+    for (int i = 0; i < 5; ++i) {
         TCITEMW ti{};
         ti.mask    = TCIF_TEXT;
         ti.pszText = const_cast<LPWSTR>(tabs[i]);
         SendMessageW(m_tab, TCM_INSERTITEMW, i, reinterpret_cast<LPARAM>(&ti));
     }
 
-    // --- General ---
+    // --- Profiles ---
     cur = &m_tabPages[0];
+    make(L"STATIC", L"Active profile:", SS_LEFT,       PX, 100, PW, 18, 0);
+    {
+        HWND combo = make(L"COMBOBOX", L"", CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP,
+                          PX, 122, PW, 220, IDC_PROFILE_COMBO);
+        (void)combo;
+    }
+    make(L"BUTTON", L"New",    BS_PUSHBUTTON | WS_TABSTOP, PX,       160, 108, 28, IDC_PROFILE_NEW);
+    make(L"BUTTON", L"Rename", BS_PUSHBUTTON | WS_TABSTOP, PX + 116, 160, 108, 28, IDC_PROFILE_RENAME);
+    make(L"BUTTON", L"Delete", BS_PUSHBUTTON | WS_TABSTOP, PX + 232, 160, 108, 28, IDC_PROFILE_DELETE);
+    make(L"STATIC",
+         L"Pick a profile to switch. Type a name then New to create (clones current settings) or Rename.",
+         SS_LEFT,                                       PX, 200, PW, 56, 0);
+
+    // --- General ---
+    cur = &m_tabPages[1];
     make(L"STATIC", L"Battery: --", SS_LEFT,           PX, 100, PW, 18, IDC_BATTERY);
     make(L"BUTTON", L"Auto-enable Steamless Mode",
          BS_AUTOCHECKBOX | WS_TABSTOP,                 PX, 126, PW, 22, IDC_AUTOENABLE);
@@ -359,7 +401,7 @@ void TrayApp::CreateControls(HWND hwnd) {
                                                        PX, 218, PW, 30, IDC_MAPPING);
 
     // --- Trackpad ---
-    cur = &m_tabPages[1];
+    cur = &m_tabPages[2];
     make(L"BUTTON", L"Trackpad Mouse",
          BS_AUTOCHECKBOX | WS_TABSTOP,                 PX, 100, PW, 22, IDC_TRACKPAD);
     make(L"BUTTON", L"Left Trackpad Scroll Wheel",
@@ -376,14 +418,14 @@ void TrayApp::CreateControls(HWND hwnd) {
     slider(L"Scroll deadzone",    374, IDC_SCROLL_DZ,   IDC_SCROLL_DZ_VAL, 1, 100);
 
     // --- Sticks ---
-    cur = &m_tabPages[2];
+    cur = &m_tabPages[3];
     slider(L"Left stick deadzone (%)",  104, IDC_LDEADZONE, IDC_LDEADZONE_VAL, 0, 90);
     slider(L"Right stick deadzone (%)", 156, IDC_RDEADZONE, IDC_RDEADZONE_VAL, 0, 90);
     slider(L"Left stick sensitivity",   208, IDC_LSTICK,    IDC_LSTICK_VAL,    1, 100);
     slider(L"Right stick sensitivity",  260, IDC_RSTICK,    IDC_RSTICK_VAL,    1, 100);
 
     // --- Haptics ---
-    cur = &m_tabPages[3];
+    cur = &m_tabPages[4];
     make(L"BUTTON", L"Haptic feedback on click",
          BS_AUTOCHECKBOX | WS_TABSTOP,                 PX, 100, PW, 22, IDC_HAPTIC_CLICK);
     make(L"BUTTON", L"Haptic feedback on movement / scroll",
@@ -397,7 +439,7 @@ void TrayApp::CreateControls(HWND hwnd) {
 }
 
 void TrayApp::ShowTab(int index) {
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 5; ++i) {
         int how = (i == index) ? SW_SHOW : SW_HIDE;
         for (HWND c : m_tabPages[i]) ShowWindow(c, how);
     }
@@ -893,7 +935,18 @@ void TrayApp::ShowViGEmBalloon() {
 // Settings / startup (registry)
 // ---------------------------------------------------------------------------
 
-static constexpr wchar_t REG_KEY[]     = L"Software\\SteamlessController";
+static constexpr wchar_t REG_KEY[]      = L"Software\\SteamlessController";
+static constexpr wchar_t REG_PROFILES[] = L"Software\\SteamlessController\\Profiles";
+
+static bool ProfileExists(const std::wstring& name) {
+    HKEY k;
+    std::wstring path = std::wstring(REG_PROFILES) + L"\\" + name;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, path.c_str(), 0, KEY_READ, &k) == ERROR_SUCCESS) {
+        RegCloseKey(k);
+        return true;
+    }
+    return false;
+}
 static constexpr wchar_t REG_RUN_KEY[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 static constexpr wchar_t APP_NAME[]    = L"SteamlessController";
 
@@ -926,11 +979,10 @@ void TrayApp::SetStartupEnabled(bool enabled) {
     RegCloseKey(key);
 }
 
-void TrayApp::LoadSettings() {
-    HKEY key;
-    if (RegOpenKeyExW(HKEY_CURRENT_USER, REG_KEY, 0, KEY_READ, &key) != ERROR_SUCCESS)
-        return;
+// --- per-profile settings (everything except the global AutoEnable / active
+//     profile name, which live in the root key) ---
 
+void TrayApp::LoadProfileSettings(HKEY key) {
     auto readBool = [&](const wchar_t* name, bool def) -> bool {
         DWORD val = 0, size = sizeof(val);
         if (RegQueryValueExW(key, name, nullptr, nullptr,
@@ -938,7 +990,6 @@ void TrayApp::LoadSettings() {
             return val != 0;
         return def;
     };
-
     auto readDword = [&](const wchar_t* name, DWORD def) -> DWORD {
         DWORD val = 0, size = sizeof(val);
         if (RegQueryValueExW(key, name, nullptr, nullptr,
@@ -960,12 +1011,12 @@ void TrayApp::LoadSettings() {
     m_controller->SetRightDeadzone       (static_cast<int>(readDword(L"RightDeadzone",        10)));
     m_controller->SetLeftStickSensitivity (static_cast<int>(readDword(L"LeftStickSens",       50)));
     m_controller->SetRightStickSensitivity(static_cast<int>(readDword(L"RightStickSens",      50)));
-    m_controller->SetAutoEnable           (readBool(L"AutoEnable",    false));
     m_controller->SetHapticOnClick        (readBool(L"HapticOnClick", false));
     m_controller->SetHapticOnMove         (readBool(L"HapticOnMove",  false));
     m_controller->SetHapticIntensity      (static_cast<int>(readDword(L"HapticDensity",        50)));
 
-    // Button mappings: 0xFFFFFFFF sentinel means "not set" -> keep default.
+    // Mappings: clear to defaults first so switching profiles fully replaces them.
+    m_controller->ResetButtonMappings();
     for (int i = 0; i < InputMapper::kSourceCount; ++i) {
         wchar_t name[16];
         swprintf_s(name, L"MapBtn%d", i);
@@ -977,21 +1028,15 @@ void TrayApp::LoadSettings() {
             m_controller->SetButtonAction(i, a);
         }
     }
-
-    RegCloseKey(key);
 }
 
-void TrayApp::SaveSettings() {
-    HKEY key;
-    if (RegCreateKeyExW(HKEY_CURRENT_USER, REG_KEY, 0, nullptr,
-                        REG_OPTION_NON_VOLATILE, KEY_WRITE, nullptr,
-                        &key, nullptr) != ERROR_SUCCESS)
-        return;
-
+void TrayApp::SaveProfileSettings(HKEY key) {
     auto writeBool = [&](const wchar_t* name, bool val) {
         DWORD dw = val ? 1 : 0;
-        RegSetValueExW(key, name, 0, REG_DWORD,
-                       reinterpret_cast<const BYTE*>(&dw), sizeof(dw));
+        RegSetValueExW(key, name, 0, REG_DWORD, reinterpret_cast<const BYTE*>(&dw), sizeof(dw));
+    };
+    auto writeDword = [&](const wchar_t* name, DWORD val) {
+        RegSetValueExW(key, name, 0, REG_DWORD, reinterpret_cast<const BYTE*>(&val), sizeof(val));
     };
 
     writeBool(L"TrackpadMouse",   m_controller->IsTrackpadMouseEnabled());
@@ -999,14 +1044,9 @@ void TrayApp::SaveSettings() {
     writeBool(L"InvertScroll",    m_controller->IsInvertScroll());
     writeBool(L"BackButtons",     m_controller->IsBackButtonsEnabled());
     writeBool(L"UseLeftTrackpad", m_controller->IsUseLeftTrackpad());
-    writeBool(L"AutoEnable",      m_controller->IsAutoEnable());
     writeBool(L"HapticOnClick",   m_controller->IsHapticOnClick());
     writeBool(L"HapticOnMove",    m_controller->IsHapticOnMove());
 
-    auto writeDword = [&](const wchar_t* name, DWORD val) {
-        RegSetValueExW(key, name, 0, REG_DWORD,
-                       reinterpret_cast<const BYTE*>(&val), sizeof(val));
-    };
     writeDword(L"TrackpadSensitivity", static_cast<DWORD>(m_controller->GetTrackpadSensitivity()));
     writeDword(L"ScrollSensitivity",   static_cast<DWORD>(m_controller->GetScrollSensitivity()));
     writeDword(L"MouseDeadzonePos",    static_cast<DWORD>(m_controller->GetMouseDeadzone()));
@@ -1025,8 +1065,142 @@ void TrayApp::SaveSettings() {
         swprintf_s(name, L"MapBtn%d", i);
         writeDword(name, v);
     }
+}
 
-    RegCloseKey(key);
+std::wstring TrayApp::ProfilePath() const {
+    return std::wstring(REG_PROFILES) + L"\\" + m_activeProfile;
+}
+
+void TrayApp::LoadSettings() {
+    // Global: active profile name + auto-enable (live in the root key).
+    HKEY root;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, REG_KEY, 0, KEY_READ, &root) == ERROR_SUCCESS) {
+        wchar_t name[128]; DWORD sz = sizeof(name), type = 0;
+        if (RegQueryValueExW(root, L"ActiveProfile", nullptr, &type,
+                             reinterpret_cast<LPBYTE>(name), &sz) == ERROR_SUCCESS && type == REG_SZ) {
+            name[127] = 0;
+            if (name[0]) m_activeProfile = name;
+        }
+        DWORD ae = 0, aesz = sizeof(ae);
+        if (RegQueryValueExW(root, L"AutoEnable", nullptr, nullptr,
+                             reinterpret_cast<LPBYTE>(&ae), &aesz) == ERROR_SUCCESS)
+            m_controller->SetAutoEnable(ae != 0);
+        RegCloseKey(root);
+    }
+
+    // Per-profile: load the active profile, or migrate the old flat values.
+    HKEY pk;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, ProfilePath().c_str(), 0, KEY_READ, &pk) == ERROR_SUCCESS) {
+        LoadProfileSettings(pk);
+        RegCloseKey(pk);
+    } else {
+        HKEY legacy;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, REG_KEY, 0, KEY_READ, &legacy) == ERROR_SUCCESS) {
+            LoadProfileSettings(legacy);
+            RegCloseKey(legacy);
+        }
+        SaveSettings();   // persist current values as the active profile
+    }
+}
+
+void TrayApp::SaveSettings() {
+    // Global.
+    HKEY root;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, REG_KEY, 0, nullptr,
+                        REG_OPTION_NON_VOLATILE, KEY_WRITE, nullptr, &root, nullptr) == ERROR_SUCCESS) {
+        DWORD ae = m_controller->IsAutoEnable() ? 1 : 0;
+        RegSetValueExW(root, L"AutoEnable", 0, REG_DWORD,
+                       reinterpret_cast<const BYTE*>(&ae), sizeof(ae));
+        RegSetValueExW(root, L"ActiveProfile", 0, REG_SZ,
+                       reinterpret_cast<const BYTE*>(m_activeProfile.c_str()),
+                       static_cast<DWORD>((m_activeProfile.size() + 1) * sizeof(wchar_t)));
+        RegCloseKey(root);
+    }
+    // Active profile.
+    HKEY pk;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, ProfilePath().c_str(), 0, nullptr,
+                        REG_OPTION_NON_VOLATILE, KEY_WRITE, nullptr, &pk, nullptr) == ERROR_SUCCESS) {
+        SaveProfileSettings(pk);
+        RegCloseKey(pk);
+    }
+}
+
+std::vector<std::wstring> TrayApp::ListProfiles() const {
+    std::vector<std::wstring> out;
+    HKEY base;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, REG_PROFILES, 0, KEY_READ, &base) == ERROR_SUCCESS) {
+        for (DWORD i = 0;; ++i) {
+            wchar_t nm[128]; DWORD sz = 128;
+            if (RegEnumKeyExW(base, i, nm, &sz, nullptr, nullptr, nullptr, nullptr) != ERROR_SUCCESS)
+                break;
+            out.push_back(nm);
+        }
+        RegCloseKey(base);
+    }
+    if (out.empty()) out.push_back(L"Default");
+    return out;
+}
+
+void TrayApp::RefreshProfileCombo() {
+    HWND combo = GetDlgItem(m_hwnd, IDC_PROFILE_COMBO);
+    if (!combo) return;
+    SendMessageW(combo, CB_RESETCONTENT, 0, 0);
+    int sel = 0, idx = 0;
+    for (auto const& p : ListProfiles()) {
+        SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(p.c_str()));
+        if (p == m_activeProfile) sel = idx;
+        ++idx;
+    }
+    SendMessageW(combo, CB_SETCURSEL, sel, 0);
+}
+
+void TrayApp::SwitchProfile(const std::wstring& name) {
+    if (name.empty() || name == m_activeProfile || !ProfileExists(name)) return;
+    m_activeProfile = name;
+    HKEY pk;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, ProfilePath().c_str(), 0, KEY_READ, &pk) == ERROR_SUCCESS) {
+        LoadProfileSettings(pk);
+        RegCloseKey(pk);
+    }
+    SaveSettings();          // persist the new active-profile selection
+    RefreshControls();
+    RefreshProfileCombo();
+}
+
+void TrayApp::CreateProfile(const std::wstring& name) {
+    if (name.empty() || ProfileExists(name)) { RefreshProfileCombo(); return; }
+    m_activeProfile = name;  // clone the current settings into the new profile
+    SaveSettings();
+    RefreshProfileCombo();
+}
+
+void TrayApp::RenameProfile(const std::wstring& newName) {
+    if (newName.empty() || newName == m_activeProfile || ProfileExists(newName)) {
+        RefreshProfileCombo();
+        return;
+    }
+    std::wstring oldName = m_activeProfile;
+    m_activeProfile = newName;
+    SaveSettings();          // write current settings under the new name
+    std::wstring oldPath = std::wstring(REG_PROFILES) + L"\\" + oldName;
+    RegDeleteKeyW(HKEY_CURRENT_USER, oldPath.c_str());
+    RefreshProfileCombo();
+}
+
+void TrayApp::DeleteProfile() {
+    auto profiles = ListProfiles();
+    if (profiles.size() <= 1) return;   // always keep one
+    std::wstring victim = m_activeProfile;
+    RegDeleteKeyW(HKEY_CURRENT_USER, ProfilePath().c_str());
+    m_activeProfile = (profiles[0] != victim) ? profiles[0] : profiles[1];
+    HKEY pk;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, ProfilePath().c_str(), 0, KEY_READ, &pk) == ERROR_SUCCESS) {
+        LoadProfileSettings(pk);
+        RegCloseKey(pk);
+    }
+    SaveSettings();
+    RefreshControls();
+    RefreshProfileCombo();
 }
 
 void TrayApp::ShowContextMenu() {
