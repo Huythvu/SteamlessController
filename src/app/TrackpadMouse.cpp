@@ -50,6 +50,8 @@ void TrackpadMouse::Reset() {
     m_scrollAccum    = 0.0f;
     m_scrollMoveAccum = 0.0f;
     m_moveAccum      = 0.0f;
+    m_lastMouseMove.store(0);
+    m_lastScrollMove.store(0);
 }
 
 void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
@@ -72,6 +74,7 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
             const int rawdy = pad.y - m_prevY;
             const int adx   = rawdx < 0 ? -rawdx : rawdx;
             const int ady   = rawdy < 0 ? -rawdy : rawdy;
+            m_lastMouseMove.store(adx + ady);   // publish for the live view
             // Deadzone: ignore movement below the threshold (resting jitter).
             if (adx + ady > m_mouseDeadzone) {
                 // Accumulate fractional movement so slow motion isn't lost to
@@ -103,7 +106,7 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
         }
 
         if (pad.touching) { m_prevX = pad.x; m_prevY = pad.y; }
-        else              { m_accumX = m_accumY = 0.0f; m_moveAccum = 0.0f; }
+        else { m_accumX = m_accumY = 0.0f; m_moveAccum = 0.0f; m_lastMouseMove.store(0); }
         m_touching = pad.touching;
 
         if (pad.clicking != m_prevClick) {
@@ -122,6 +125,7 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
         if (pad.touching && m_scrollTouching) {
             const int rawdy = pad.y - m_scrollPrevY;
             const int ady   = rawdy < 0 ? -rawdy : rawdy;
+            m_lastScrollMove.store(ady);   // publish for the live view
             // Deadzone: ignore tiny movement so a resting thumb doesn't scroll.
             if (ady > m_scrollDeadzone) {
                 // Natural direction: finger up scrolls up. Invert flips it.
@@ -150,7 +154,7 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
         }
 
         if (pad.touching) m_scrollPrevY = pad.y;
-        else              m_scrollAccum = 0.0f;
+        else { m_scrollAccum = 0.0f; m_lastScrollMove.store(0); }
         m_scrollTouching = pad.touching;
 
         // Clicking the scroll pad acts as a middle click.

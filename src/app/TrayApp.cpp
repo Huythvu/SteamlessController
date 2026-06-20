@@ -498,7 +498,7 @@ void TrayApp::DrawTabs() {
         ImGui::BeginDisabled(!c.IsTrackpadMouseEnabled());
         slider("Mouse sensitivity", c.GetTrackpadSensitivity(), 1, 100,
                &ControllerManager::SetTrackpadSensitivity);
-        slider("Mouse deadzone", c.GetMouseDeadzone(), 1, 100,
+        slider("Mouse deadzone (0 = off)", c.GetMouseDeadzone(), 0, 100,
                &ControllerManager::SetMouseDeadzone);
         ImGui::EndDisabled();
 
@@ -512,7 +512,7 @@ void TrayApp::DrawTabs() {
                &ControllerManager::SetInvertScroll);
         slider("Scroll sensitivity", c.GetScrollSensitivity(), 1, 100,
                &ControllerManager::SetScrollSensitivity);
-        slider("Scroll deadzone", c.GetScrollDeadzone(), 1, 100,
+        slider("Scroll deadzone (0 = off)", c.GetScrollDeadzone(), 0, 100,
                &ControllerManager::SetScrollDeadzone);
         ImGui::EndDisabled();
 
@@ -523,7 +523,6 @@ void TrayApp::DrawTabs() {
         uint8_t rep[64];
         size_t n = c.GetLatestReport(rep, sizeof(rep));
         bool useLeft = c.IsUseLeftTrackpad();
-        auto absI  = [](int v) { return v < 0 ? -v : v; };
         auto rd16  = [&](int idx) -> int16_t {
             int16_t v = 0; if (n >= static_cast<size_t>(idx) + 2) std::memcpy(&v, rep + idx, 2);
             return v;
@@ -536,23 +535,22 @@ void TrayApp::DrawTabs() {
         bool mt, mc; int16_t mx, my; parse(useLeft,  mt, mc, mx, my);
         bool st, sc; int16_t sx, sy; parse(!useLeft, st, sc, sx, sy);
 
-        // Per-frame movement, normalized to the read loop's ~32 ms tick and
-        // smoothed, so it lines up with the per-frame deadzone threshold.
-        float dt = ImGui::GetIO().DeltaTime; if (dt <= 0.0f) dt = 0.016f;
-        int mMove = (mt && m_tpMt) ? absI(mx - m_tpMx) + absI(my - m_tpMy) : 0;
-        int sMove = (st && m_tpSt) ? absI(sy - m_tpSy) : 0;
-        m_tpMx = mx; m_tpMy = my; m_tpMt = mt;
-        m_tpSx = sx; m_tpSy = sy; m_tpSt = st;
-        m_tpMouseVel  = m_tpMouseVel  * 0.75f + (mMove * (0.032f / dt)) * 0.25f;
-        m_tpScrollVel = m_tpScrollVel * 0.75f + (sMove * (0.032f / dt)) * 0.25f;
-        int mdz = c.GetMouseDeadzoneRaw();  if (mdz < 1) mdz = 1;
-        int sdz = c.GetScrollDeadzoneRaw(); if (sdz < 1) sdz = 1;
+        // Use the exact per-report movement the deadzone check sees, smoothed a
+        // little so the bar isn't jittery. Crossing the red line now means the
+        // mouse/scroll is actually producing output.
+        m_tpMouseVel  = m_tpMouseVel  * 0.6f + static_cast<float>(c.GetLastMouseMove())  * 0.4f;
+        m_tpScrollVel = m_tpScrollVel * 0.6f + static_cast<float>(c.GetLastScrollMove()) * 0.4f;
+        int mdz = c.GetMouseDeadzoneRaw();
+        int sdz = c.GetScrollDeadzoneRaw();
+        // velFrac: the deadzone sits at the half-way (red) mark; >=0.5 => output.
+        float mFrac = mdz > 0 ? m_tpMouseVel  / (2.0f * mdz) : (m_tpMouseVel  > 0 ? 1.0f : 0.0f);
+        float sFrac = sdz > 0 ? m_tpScrollVel / (2.0f * sdz) : (m_tpScrollVel > 0 ? 1.0f : 0.0f);
 
         DrawTrackpadView(useLeft ? "Mouse pad (left)" : "Mouse pad (right)",
-                         mt, mc, mx / 32767.0f, my / 32767.0f, m_tpMouseVel / (2.0f * mdz));
+                         mt, mc, mx / 32767.0f, my / 32767.0f, mFrac);
         ImGui::SameLine(0, 24);
         DrawTrackpadView(useLeft ? "Scroll pad (right)" : "Scroll pad (left)",
-                         st, sc, sx / 32767.0f, sy / 32767.0f, m_tpScrollVel / (2.0f * sdz));
+                         st, sc, sx / 32767.0f, sy / 32767.0f, sFrac);
         ImGui::EndTabItem();
     }
 

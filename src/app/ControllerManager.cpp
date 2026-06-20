@@ -22,16 +22,16 @@ static float MoveTickFromPos(int pos) {
     return 8000.0f * std::pow(2.0f, (50 - pos) / 50.0f);
 }
 
-// Deadzone: a 1..100 slider where 50 = baseline, 100 = 2x, 1 ~= 0.5x. The old
-// mouse baseline of 120 was far too small to reject a resting thumb (even at
-// max it barely filtered). Scroll (~600) works well, so the mouse is brought
-// onto a comparable scale -- a bit higher, since the mouse check sums both
-// axes (adx+ady) and so needs more threshold for the same rejection.
+// Deadzone: a 0..100 slider (raw pad units per report). 0 = off (no filtering).
+// Linear so the low end has fine control and the value is easy to read against
+// the live movement bar. Mouse runs a bit higher per step than scroll because
+// its check sums both axes (adx+ady) and so needs more threshold to reject the
+// same resting jitter.
 static int MouseDzFromPos(int pos) {
-    return static_cast<int>(800.0f * std::pow(2.0f, (pos - 50) / 50.0f));
+    return pos <= 0 ? 0 : pos * 10;     // 0 = off .. 1000
 }
 static int ScrollDzFromPos(int pos) {
-    return static_cast<int>(600.0f * std::pow(2.0f, (pos - 50) / 50.0f));
+    return pos <= 0 ? 0 : pos * 12;     // 0 = off .. 1200 (preserves ~600 at 50)
 }
 
 // Map a 1..100 stick-sensitivity position to a response-curve exponent:
@@ -210,7 +210,7 @@ void ControllerManager::SetScrollSensitivity(int pos) {
 }
 
 void ControllerManager::SetMouseDeadzone(int pos) {
-    if (pos < 1)   pos = 1;
+    if (pos < 0)   pos = 0;
     if (pos > 100) pos = 100;
     m_mouseDeadzone = pos;
     std::lock_guard<std::mutex> lock(m_inputMutex);
@@ -218,7 +218,7 @@ void ControllerManager::SetMouseDeadzone(int pos) {
 }
 
 void ControllerManager::SetScrollDeadzone(int pos) {
-    if (pos < 1)   pos = 1;
+    if (pos < 0)   pos = 0;
     if (pos > 100) pos = 100;
     m_scrollDeadzone = pos;
     std::lock_guard<std::mutex> lock(m_inputMutex);

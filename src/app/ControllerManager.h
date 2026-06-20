@@ -62,6 +62,8 @@ public:
     int  GetScrollDeadzone()       const { return m_scrollDeadzone; }
     int  GetMouseDeadzoneRaw()     const;   // per-frame threshold in pad units
     int  GetScrollDeadzoneRaw()    const;
+    int  GetLastMouseMove()        const { return m_trackpad.LastMouseMove(); }
+    int  GetLastScrollMove()       const { return m_trackpad.LastScrollMove(); }
     int  GetLeftDeadzone()         const { return m_lDeadzone; }
     int  GetRightDeadzone()        const { return m_rDeadzone; }
     int  GetLeftStickSensitivity() const { return m_lStickSens; }

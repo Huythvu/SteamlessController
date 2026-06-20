@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <functional>
+#include <atomic>
 
 class TrackpadMouse {
 public:
@@ -24,6 +25,11 @@ public:
 
     void Update(const uint8_t* buf, size_t n);
     void Reset();
+
+    // The most recent per-report movement the deadzone check actually sees
+    // (mouse = |dx|+|dy|, scroll = |dy|), for the live view. 0 when not touching.
+    int  LastMouseMove()  const { return m_lastMouseMove.load(); }
+    int  LastScrollMove() const { return m_lastScrollMove.load(); }
 
 private:
     struct Pad { bool touching; bool clicking; int16_t x; int16_t y; };
@@ -66,6 +72,8 @@ private:
     float    m_moveAccum        = 0.0f;      // distance since last move tick
     int      m_mouseDeadzone    = 20;        // per-frame deadzone (units)
     int      m_scrollDeadzone   = 120;
+    std::atomic<int> m_lastMouseMove{0};     // live view: latest report's movement
+    std::atomic<int> m_lastScrollMove{0};
 
     // Move-tick pulse strength (density is the user-facing control for moves).
     static constexpr float HAPTIC_MOVE  = 600.0f;
