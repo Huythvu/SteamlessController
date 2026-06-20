@@ -515,6 +515,44 @@ void TrayApp::DrawTabs() {
         slider("Scroll deadzone", c.GetScrollDeadzone(), 1, 100,
                &ControllerManager::SetScrollDeadzone);
         ImGui::EndDisabled();
+
+        // --- live view ---
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::TextDisabled("LIVE VIEW (enable Steamless Mode to see input)");
+        uint8_t rep[64];
+        size_t n = c.GetLatestReport(rep, sizeof(rep));
+        bool useLeft = c.IsUseLeftTrackpad();
+        auto absI  = [](int v) { return v < 0 ? -v : v; };
+        auto rd16  = [&](int idx) -> int16_t {
+            int16_t v = 0; if (n >= static_cast<size_t>(idx) + 2) std::memcpy(&v, rep + idx, 2);
+            return v;
+        };
+        auto parse = [&](bool left, bool& t, bool& clk, int16_t& x, int16_t& y) {
+            if (n < 30) { t = clk = false; x = y = 0; return; }
+            if (left) { t = (rep[5] & 0x02) != 0; clk = (rep[5] & 0x04) != 0; x = rd16(18); y = rd16(20); }
+            else      { t = (rep[4] & 0x20) != 0; clk = (rep[4] & 0x40) != 0; x = rd16(24); y = rd16(26); }
+        };
+        bool mt, mc; int16_t mx, my; parse(useLeft,  mt, mc, mx, my);
+        bool st, sc; int16_t sx, sy; parse(!useLeft, st, sc, sx, sy);
+
+        // Per-frame movement, normalized to the read loop's ~32 ms tick and
+        // smoothed, so it lines up with the per-frame deadzone threshold.
+        float dt = ImGui::GetIO().DeltaTime; if (dt <= 0.0f) dt = 0.016f;
+        int mMove = (mt && m_tpMt) ? absI(mx - m_tpMx) + absI(my - m_tpMy) : 0;
+        int sMove = (st && m_tpSt) ? absI(sy - m_tpSy) : 0;
+        m_tpMx = mx; m_tpMy = my; m_tpMt = mt;
+        m_tpSx = sx; m_tpSy = sy; m_tpSt = st;
+        m_tpMouseVel  = m_tpMouseVel  * 0.75f + (mMove * (0.032f / dt)) * 0.25f;
+        m_tpScrollVel = m_tpScrollVel * 0.75f + (sMove * (0.032f / dt)) * 0.25f;
+        int mdz = c.GetMouseDeadzoneRaw();  if (mdz < 1) mdz = 1;
+        int sdz = c.GetScrollDeadzoneRaw(); if (sdz < 1) sdz = 1;
+
+        DrawTrackpadView(useLeft ? "Mouse pad (left)" : "Mouse pad (right)",
+                         mt, mc, mx / 32767.0f, my / 32767.0f, m_tpMouseVel / (2.0f * mdz));
+        ImGui::SameLine(0, 24);
+        DrawTrackpadView(useLeft ? "Scroll pad (right)" : "Scroll pad (left)",
+                         st, sc, sx / 32767.0f, sy / 32767.0f, m_tpScrollVel / (2.0f * sdz));
         ImGui::EndTabItem();
     }
 
@@ -872,6 +910,52 @@ void TrayApp::DrawStickView(float nx, float ny, float dz) {
     dl->AddCircleFilled(dot, 6.0f, IM_COL32(80, 180, 255, 255));
 
     ImGui::Dummy(ImVec2(sz, sz));
+}
+
+// A live trackpad view: square pad with the touch dot, touch/click state, and
+// a movement bar with the deadzone marked at the half-way line. When you move
+// fast enough to cross the red marker, the bar goes green = output is sent.
+void TrayApp::DrawTrackpadView(const char* label, bool touch, bool click,
+                               float nx, float ny, float velFrac) {
+    ImGui::BeginGroup();
+    ImGui::TextUnformatted(label);
+
+    const float sz = 150.0f;
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImVec2 a = p, b = ImVec2(p.x + sz, p.y + sz);
+    ImU32 border = ImGui::GetColorU32(ImGuiCol_Border);
+
+    dl->AddRectFilled(a, b, click ? IM_COL32(45, 110, 60, 255)
+                                   : ImGui::GetColorU32(ImGuiCol_FrameBg), 12.0f);
+    dl->AddRect(a, b, touch ? IM_COL32(80, 180, 255, 255) : border, 12.0f);
+    if (touch) {
+        float px = nx < -1 ? -1 : (nx > 1 ? 1 : nx);
+        float py = ny < -1 ? -1 : (ny > 1 ? 1 : ny);
+        ImVec2 ctr((a.x + b.x) / 2, (a.y + b.y) / 2);
+        float half = sz / 2 - 6;
+        dl->AddCircleFilled(ImVec2(ctr.x + px * half, ctr.y - py * half), 7.0f,
+                            IM_COL32(80, 180, 255, 255));
+    }
+    ImGui::Dummy(ImVec2(sz, sz));
+
+    ImGui::TextDisabled("%s   %s", touch ? "TOUCH" : "touch", click ? "CLICK" : "click");
+
+    // movement bar with the deadzone at the half-way mark
+    ImVec2 bp = ImGui::GetCursorScreenPos();
+    const float bw = sz, bh = 14.0f;
+    ImVec2 ba = bp, bb = ImVec2(bp.x + bw, bp.y + bh);
+    float f = velFrac < 0 ? 0 : (velFrac > 1 ? 1 : velFrac);
+    bool active = velFrac >= 0.5f;
+    dl->AddRectFilled(ba, bb, ImGui::GetColorU32(ImGuiCol_FrameBg), 4.0f);
+    dl->AddRectFilled(ba, ImVec2(bp.x + bw * f, bp.y + bh),
+                      active ? IM_COL32(50, 180, 80, 255) : IM_COL32(110, 115, 125, 255), 4.0f);
+    float mid = bp.x + bw * 0.5f;
+    dl->AddLine(ImVec2(mid, bp.y - 1), ImVec2(mid, bp.y + bh + 1), IM_COL32(230, 80, 80, 255), 2.0f);
+    dl->AddRect(ba, bb, border, 4.0f);
+    ImGui::Dummy(ImVec2(bw, bh));
+    ImGui::TextDisabled("movement | deadzone");
+    ImGui::EndGroup();
 }
 
 // ---------------------------------------------------------------------------

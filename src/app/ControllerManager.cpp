@@ -221,6 +221,9 @@ void ControllerManager::SetScrollDeadzone(int pos) {
     m_trackpad.SetScrollDeadzone(ScrollDzFromPos(pos));
 }
 
+int ControllerManager::GetMouseDeadzoneRaw()  const { return MouseDzFromPos(m_mouseDeadzone); }
+int ControllerManager::GetScrollDeadzoneRaw() const { return ScrollDzFromPos(m_scrollDeadzone); }
+
 void ControllerManager::SetLeftDeadzone(int pos) {
     if (pos < 0)  pos = 0;
     if (pos > 90) pos = 90;

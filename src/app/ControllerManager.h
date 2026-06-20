@@ -60,6 +60,8 @@ public:
     int  GetScrollSensitivity()    const { return m_scrollSensitivity; }
     int  GetMouseDeadzone()        const { return m_mouseDeadzone; }
     int  GetScrollDeadzone()       const { return m_scrollDeadzone; }
+    int  GetMouseDeadzoneRaw()     const;   // per-frame threshold in pad units
+    int  GetScrollDeadzoneRaw()    const;
     int  GetLeftDeadzone()         const { return m_lDeadzone; }
     int  GetRightDeadzone()        const { return m_rDeadzone; }
     int  GetLeftStickSensitivity() const { return m_lStickSens; }

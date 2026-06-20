@@ -37,6 +37,8 @@ private:
     void DrawTabs();
     void DrawControllerTab();
     void DrawStickView(float nx, float ny, float dz);
+    void DrawTrackpadView(const char* label, bool touch, bool click,
+                          float nx, float ny, float velFrac);
 
     // --- Tray ---
     void AddTrayIcon();
@@ -83,6 +85,11 @@ private:
     int                                m_currentTab = 0;
     int                                m_recordIndex = -1;  // source listening for a key
     char                               m_profileNameBuf[64] = {};
+
+    // Trackpad live-view state: previous touch sample + smoothed velocity.
+    int                                m_tpMx = 0, m_tpMy = 0; bool m_tpMt = false;
+    int                                m_tpSx = 0, m_tpSy = 0; bool m_tpSt = false;
+    float                              m_tpMouseVel = 0.0f, m_tpScrollVel = 0.0f;
 
     // Tray state marshaled from the controller callback (any thread).
     std::atomic_bool                   m_pendingConnected{false};
