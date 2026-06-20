@@ -35,7 +35,6 @@ public:
     void ApplyAutoEnable();   // enable now if configured + connected + off
 
     void SetTrackpadMouseEnabled(bool enabled);
-    void SetBackButtonsEnabled(bool enabled);
     void SetUseLeftTrackpad(bool enabled);
     void SetScrollWheelEnabled(bool enabled);
     void SetInvertScroll(bool enabled);
@@ -52,7 +51,6 @@ public:
     bool IsConnected()             const { return m_connected.load(); }
     bool IsGameModeActive()        const { return m_gameModeActive.load(); }
     bool IsTrackpadMouseEnabled()  const { return m_trackpadMouseEnabled; }
-    bool IsBackButtonsEnabled()    const { return m_backButtonsEnabled; }
     bool IsUseLeftTrackpad()       const { return m_useLeftTrackpad; }
     bool IsScrollWheelEnabled()    const { return m_scrollWheelEnabled; }
     bool IsInvertScroll()          const { return m_invertScroll; }
@@ -114,7 +112,6 @@ private:
     std::atomic<bool>                  m_connected{false};
     std::atomic<bool>                  m_gameModeActive{false};
     bool                               m_trackpadMouseEnabled = false;
-    bool                               m_backButtonsEnabled   = false;
     bool                               m_useLeftTrackpad      = false;
     bool                               m_scrollWheelEnabled   = false;
     bool                               m_invertScroll         = false;

@@ -82,7 +82,6 @@ void ControllerManager::EnableGameMode() {
         const bool susp = m_trackpadSuspended.load();
         m_trackpad.Reset();
         m_trackpad.SetTrackpadEnabled(m_trackpadMouseEnabled && !susp);
-        m_trackpad.SetBackButtonsEnabled(m_backButtonsEnabled);
         m_trackpad.SetUseLeftTrackpad(m_useLeftTrackpad);
         m_trackpad.SetScrollEnabled(m_scrollWheelEnabled && !susp);
         m_trackpad.SetInvertScroll(m_invertScroll);
@@ -118,13 +117,6 @@ void ControllerManager::SetTrackpadMouseEnabled(bool enabled) {
     std::lock_guard<std::mutex> lock(m_inputMutex);
     if (!enabled) m_trackpad.Reset();
     m_trackpad.SetTrackpadEnabled(enabled && !m_trackpadSuspended.load());
-}
-
-void ControllerManager::SetBackButtonsEnabled(bool enabled) {
-    m_backButtonsEnabled = enabled;
-    std::lock_guard<std::mutex> lock(m_inputMutex);
-    if (!enabled) m_trackpad.Reset();
-    m_trackpad.SetBackButtonsEnabled(enabled);
 }
 
 void ControllerManager::SetUseLeftTrackpad(bool enabled) {

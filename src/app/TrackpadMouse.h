@@ -7,7 +7,6 @@
 class TrackpadMouse {
 public:
     void SetTrackpadEnabled(bool enabled)        { m_trackpadEnabled    = enabled; }
-    void SetBackButtonsEnabled(bool enabled)     { m_backButtonsEnabled = enabled; }
     void SetUseLeftTrackpad(bool enabled)        { m_useLeftTrackpad    = enabled; }
     void SetScrollEnabled(bool enabled)          { m_scrollEnabled      = enabled; }
     void SetInvertScroll(bool enabled)           { m_invertScroll       = enabled; }
@@ -36,7 +35,6 @@ private:
     static Pad ReadPad(const uint8_t* buf, bool left);
 
     bool     m_trackpadEnabled    = false;
-    bool     m_backButtonsEnabled = false;
     bool     m_useLeftTrackpad    = false;
     bool     m_scrollEnabled      = false;
     bool     m_invertScroll       = false;
@@ -55,10 +53,8 @@ private:
     float    m_scrollAccum    = 0.0f;
     float    m_scrollMoveAccum = 0.0f;   // distance since last scroll haptic tick
 
-    // Click state
+    // Click haptic edge state
     bool     m_prevClick  = false;
-    bool     m_prevR4     = false;
-    bool     m_prevR5     = false;
 
     float    m_sensitivity       = 0.015f;
     float    m_scrollSensitivity = 0.06f;

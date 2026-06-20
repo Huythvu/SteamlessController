@@ -14,6 +14,7 @@ enum : uint16_t {
 };
 
 #define XB(v) InputMapper::Action{ InputMapper::Type::Xbox, (v) }
+#define MO(v) InputMapper::Action{ InputMapper::Type::Mouse, (v) }
 #define NONE  InputMapper::Action{ InputMapper::Type::None, 0 }
 
 // buf indices: [2]=b0, [3]=b1, [4]=b2, [5]=b3 (see SteamController.h).
@@ -37,6 +38,10 @@ const InputMapper::Source InputMapper::kSources[InputMapper::kSourceCount] = {
     { L"L5 Paddle",    4, 0x04, NONE },
     { L"R4 Paddle",    2, 0x80, NONE },
     { L"R5 Paddle",    3, 0x01, NONE },
+    // Trackpad hard-presses. Defaults match the old behaviour: the mouse pad
+    // (right by default) clicks left, the scroll pad (left) clicks middle.
+    { L"Right Pad Click", 4, 0x40, MO(InputMapper::MB_LEFT) },
+    { L"Left Pad Click",  5, 0x04, MO(InputMapper::MB_MIDDLE) },
 };
 
 const InputMapper::Target InputMapper::kXboxTargets[] = {
@@ -91,6 +96,7 @@ const int InputMapper::kKeyTargetCount =
     sizeof(InputMapper::kKeyTargets) / sizeof(InputMapper::kKeyTargets[0]);
 
 #undef XB
+#undef MO
 #undef NONE
 
 static void SendKey(WORD vk, bool down) {
@@ -99,6 +105,26 @@ static void SendKey(WORD vk, bool down) {
     in.ki.wVk   = vk;
     in.ki.dwFlags = down ? 0 : KEYEVENTF_KEYUP;
     SendInput(1, &in, sizeof(INPUT));
+}
+
+static void SendMouse(uint16_t btn, bool down) {
+    INPUT in{};
+    in.type = INPUT_MOUSE;
+    switch (btn) {
+        case InputMapper::MB_LEFT:   in.mi.dwFlags = down ? MOUSEEVENTF_LEFTDOWN   : MOUSEEVENTF_LEFTUP;   break;
+        case InputMapper::MB_RIGHT:  in.mi.dwFlags = down ? MOUSEEVENTF_RIGHTDOWN  : MOUSEEVENTF_RIGHTUP;  break;
+        case InputMapper::MB_MIDDLE: in.mi.dwFlags = down ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_MIDDLEUP; break;
+        case InputMapper::MB_X1:     in.mi.dwFlags = down ? MOUSEEVENTF_XDOWN : MOUSEEVENTF_XUP; in.mi.mouseData = XBUTTON1; break;
+        case InputMapper::MB_X2:     in.mi.dwFlags = down ? MOUSEEVENTF_XDOWN : MOUSEEVENTF_XUP; in.mi.mouseData = XBUTTON2; break;
+        default: return;
+    }
+    SendInput(1, &in, sizeof(INPUT));
+}
+
+// Release whatever edge-triggered output (key or mouse button) a source holds.
+static void ReleaseHeld(const InputMapper::Action& a) {
+    if (a.type == InputMapper::Type::Key)   SendKey(static_cast<WORD>(a.value), false);
+    else if (a.type == InputMapper::Type::Mouse) SendMouse(a.value, false);
 }
 
 InputMapper::InputMapper() {
@@ -112,9 +138,9 @@ void InputMapper::ResetToDefaults() {
 
 void InputMapper::SetAction(int i, Action a) {
     if (i < 0 || i >= kSourceCount) return;
-    // If the source had a key held, release it before switching.
+    // If the source had a key/mouse button held, release it before switching.
     if (m_keyDown[i]) {
-        SendKey(static_cast<WORD>(m_actions[i].value), false);
+        ReleaseHeld(m_actions[i]);
         m_keyDown[i] = false;
     }
     m_actions[i] = a;
@@ -139,6 +165,11 @@ uint16_t InputMapper::Process(const uint8_t* buf, size_t n) {
                 SendKey(static_cast<WORD>(a.value), pressed);
                 m_keyDown[i] = pressed;
             }
+        } else if (a.type == Type::Mouse) {
+            if (pressed != m_keyDown[i]) {
+                SendMouse(a.value, pressed);
+                m_keyDown[i] = pressed;
+            }
         }
     }
     return bits;
@@ -147,7 +178,7 @@ uint16_t InputMapper::Process(const uint8_t* buf, size_t n) {
 void InputMapper::ReleaseKeys() {
     for (int i = 0; i < kSourceCount; ++i) {
         if (m_keyDown[i]) {
-            SendKey(static_cast<WORD>(m_actions[i].value), false);
+            ReleaseHeld(m_actions[i]);
             m_keyDown[i] = false;
         }
     }

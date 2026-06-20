@@ -8,7 +8,7 @@
 // edge detection so a held button produces one key-down / key-up pair.
 class InputMapper {
 public:
-    enum class Type : uint8_t { None, Xbox, Key };
+    enum class Type : uint8_t { None, Xbox, Key, Mouse };
     struct Action { Type type = Type::None; uint16_t value = 0; };
 
     // A physical button: where to read it and its factory-default action.
@@ -17,7 +17,10 @@ public:
     // A selectable target for the remap UI.
     struct Target { const wchar_t* name; Type type; uint16_t value; };
 
-    static constexpr int kSourceCount = 19;
+    // Mouse-button values used by Type::Mouse actions.
+    enum : uint16_t { MB_LEFT = 1, MB_RIGHT = 2, MB_MIDDLE = 3, MB_X1 = 4, MB_X2 = 5 };
+
+    static constexpr int kSourceCount = 21;
     static const Source  kSources[kSourceCount];
 
     static const Target  kXboxTargets[];

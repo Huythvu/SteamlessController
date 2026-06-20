@@ -5,13 +5,6 @@
 
 static constexpr uint8_t BTN_TP_RT_CLICK = 0x40;  // buf[4] bit 6 — right pad hard press
 
-static void SendMouseButton(DWORD flags) {
-    INPUT input{};
-    input.type       = INPUT_MOUSE;
-    input.mi.dwFlags = flags;
-    SendInput(1, &input, sizeof(INPUT));
-}
-
 // Read one trackpad's touch / click / position from a state report.
 TrackpadMouse::Pad TrackpadMouse::ReadPad(const uint8_t* buf, bool left) {
     Pad p{};
@@ -32,14 +25,10 @@ TrackpadMouse::Pad TrackpadMouse::ReadPad(const uint8_t* buf, bool left) {
 }
 
 void TrackpadMouse::Reset() {
-    if (m_prevClick)      SendMouseButton(MOUSEEVENTF_LEFTUP);
-    if (m_scrollPrevClick) SendMouseButton(MOUSEEVENTF_MIDDLEUP);
-    if (m_prevR4)         SendMouseButton(MOUSEEVENTF_LEFTUP);
-    if (m_prevR5)         SendMouseButton(MOUSEEVENTF_RIGHTUP);
+    // Mouse-button output (pad clicks / paddles) is now owned by InputMapper;
+    // here we only clear local movement + haptic edge state.
     m_touching  = false;
     m_prevClick = false;
-    m_prevR4    = false;
-    m_prevR5    = false;
     m_prevX     = 0;
     m_prevY     = 0;
     m_accumX    = 0.0f;
@@ -56,10 +45,6 @@ void TrackpadMouse::Reset() {
 
 void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
     if (n < 30) return;
-
-    const uint8_t b0 = buf[2];
-    const uint8_t b1 = buf[3];
-    const uint8_t b2 = buf[4];
 
     // The mouse uses one trackpad; the scroll wheel uses the other one.
     const bool mouseLeft  = m_useLeftTrackpad;
@@ -110,8 +95,8 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
         m_touching = pad.touching;
 
         if (pad.clicking != m_prevClick) {
-            SendMouseButton(pad.clicking ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP);
-            // Fire on both press and release for a tactile "two-way" click.
+            // The click output itself is produced by InputMapper (remappable);
+            // here we only add the local two-way click haptic.
             if (m_hapticOnClick)
                 fireClick(mousePadSide());
             m_prevClick = pad.clicking;
@@ -157,31 +142,12 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
         else { m_scrollAccum = 0.0f; m_lastScrollMove.store(0); }
         m_scrollTouching = pad.touching;
 
-        // Clicking the scroll pad acts as a middle click.
+        // Scroll-pad click (middle-click by default) is produced by InputMapper;
+        // here we only add the local click haptic.
         if (pad.clicking != m_scrollPrevClick) {
-            SendMouseButton(pad.clicking ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_MIDDLEUP);
             if (m_hapticOnClick)
                 fireClick(scrollPadSide());
             m_scrollPrevClick = pad.clicking;
-        }
-    }
-
-    // --- Back buttons: left side uses L4/L5, right side uses R4/R5 ---
-    if (m_backButtonsEnabled) {
-        const bool btn1 = m_useLeftTrackpad
-            ? (b2 & SteamController::BTN_L4) != 0   // L4 = left click
-            : (b0 & SteamController::BTN_R4) != 0;  // R4 = left click
-        const bool btn2 = m_useLeftTrackpad
-            ? (b2 & SteamController::BTN_L5) != 0   // L5 = right click
-            : (b1 & SteamController::BTN_R5) != 0;  // R5 = right click
-
-        if (btn1 != m_prevR4) {
-            SendMouseButton(btn1 ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP);
-            m_prevR4 = btn1;
-        }
-        if (btn2 != m_prevR5) {
-            SendMouseButton(btn2 ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_RIGHTUP);
-            m_prevR5 = btn2;
         }
     }
 }

@@ -276,6 +276,27 @@ LRESULT CALLBACK TrayApp::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 }
 
 LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    // Remap-by-recording: once a button on the diagram is armed, the next mouse
+    // button the user presses becomes its mapping. Handled before ImGui so the
+    // click binds instead of activating a widget.
+    if (m_recordIndex >= 0) {
+        uint16_t mb = 0;
+        // Left-click only binds over empty space; over a UI item it re-arms /
+        // resets as usual (so you can pick a different button while armed).
+        if      (msg == WM_LBUTTONDOWN) { if (!ImGui::IsAnyItemHovered()) mb = InputMapper::MB_LEFT; }
+        else if (msg == WM_RBUTTONDOWN) mb = InputMapper::MB_RIGHT;
+        else if (msg == WM_MBUTTONDOWN) mb = InputMapper::MB_MIDDLE;
+        else if (msg == WM_XBUTTONDOWN)
+            mb = (HIWORD(wp) == XBUTTON1) ? InputMapper::MB_X1 : InputMapper::MB_X2;
+        if (mb) {
+            int idx = m_recordIndex;
+            m_recordIndex = -1;
+            m_controller->SetButtonAction(idx, { InputMapper::Type::Mouse, mb });
+            SaveSettings();
+            return 0;
+        }
+    }
+
     if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wp, lp))
         return true;
 
@@ -632,9 +653,6 @@ void TrayApp::DrawTabs() {
         if (ImGui::Checkbox("Start with Windows", &startup))
             SetStartupEnabled(startup);
 
-        toggle("Enable back grip buttons", c.IsBackButtonsEnabled(),
-               &ControllerManager::SetBackButtonsEnabled);
-
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::TextDisabled("SteamlessController");
@@ -647,6 +665,16 @@ void TrayApp::DrawTabs() {
 // Human-readable label for a mapped action (searches the target tables).
 static std::string ActionLabel(InputMapper::Action a) {
     if (a.type == InputMapper::Type::None) return "-";
+    if (a.type == InputMapper::Type::Mouse) {
+        switch (a.value) {
+            case InputMapper::MB_LEFT:   return "Mouse Left";
+            case InputMapper::MB_RIGHT:  return "Mouse Right";
+            case InputMapper::MB_MIDDLE: return "Mouse Middle";
+            case InputMapper::MB_X1:     return "Mouse X1";
+            case InputMapper::MB_X2:     return "Mouse X2";
+            default:                     return "Mouse?";
+        }
+    }
     const InputMapper::Target* t = nullptr; int cnt = 0;
     const char* prefix = "";
     if (a.type == InputMapper::Type::Xbox) {
@@ -683,7 +711,9 @@ void TrayApp::DrawControllerTab() {
     if (m_recordIndex >= 0 && n >= 30) {
         for (int j = 0; j < InputMapper::kSourceCount; ++j) {
             const InputMapper::Source& s = InputMapper::kSources[j];
-            if (s.def.type == InputMapper::Type::None) continue;   // skip paddles
+            // Only standard gamepad buttons are recordable this way (skip the
+            // paddles and trackpad clicks, which default to None / Mouse).
+            if (s.def.type != InputMapper::Type::Xbox) continue;
             if (n > s.byteIndex && (rep[s.byteIndex] & s.mask) != 0) {
                 m_controller->SetButtonAction(m_recordIndex, s.def);
                 SaveSettings();
@@ -701,10 +731,10 @@ void TrayApp::DrawControllerTab() {
     ImGui::SameLine(0, 16);
     if (m_recordIndex >= 0)
         ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.20f, 1.0f),
-            "Press a key or gamepad button for \"%s\"   (Esc cancel, Del clear)",
+            "Press a key, gamepad button, or mouse button for \"%s\"   (Esc cancel, Del clear)",
             Narrow(InputMapper::kSources[m_recordIndex].name).c_str());
     else
-        ImGui::TextDisabled("Click a button then press a key or gamepad button. Right-click = reset to default.");
+        ImGui::TextDisabled("Click a button then press a key / gamepad / mouse button. Right-click = reset to default.");
     ImGui::Spacing();
 
     const float S = 1.2f;                 // scale the original pixel layout
@@ -789,11 +819,12 @@ void TrayApp::DrawControllerTab() {
         ImVec2 ts = ImGui::CalcTextSize(s);
         dl->AddText(ImVec2(c.x - ts.x / 2, PY(cy + r) + 3), textCol, s);
     };
-    auto squarePad = [&](float x, float y, float size, bool clicked, bool active,
+    auto squarePad = [&](float x, float y, float size, int idx, bool active,
                          int16_t vx, int16_t vy, const char* s) {
+        bool clicked = srcPressed(idx);
+        bool hov = remapHit(idx, x, y, size, size);
         ImVec2 a(PX(x), PY(y)), b(PX(x + size), PY(y + size));
-        dl->AddRectFilled(a, b, clicked ? IM_COL32(50, 180, 80, 255) : IM_COL32(55, 58, 65, 255),
-                          14.0f * S);
+        dl->AddRectFilled(a, b, fillCol(idx, clicked, hov), 14.0f * S);
         dl->AddRect(a, b, border, 14.0f * S);
         if (active) {
             float half = (size / 2 - 10) * S;
@@ -845,9 +876,9 @@ void TrayApp::DrawControllerTab() {
     // sticks (clickable = stick-click)
     roundPad(125, 280, 46, 6, srcPressed(6), rd16(10), rd16(12), "Left Stick");
     roundPad(375, 280, 46, 7, srcPressed(7), rd16(14), rd16(16), "Right Stick");
-    // trackpads (live only, not remappable)
-    squarePad(70,  360, 110, bit(5, 0x04), bit(5, 0x02), rd16(18), rd16(20), "Left Pad");
-    squarePad(320, 360, 110, bit(4, 0x40), bit(4, 0x20), rd16(24), rd16(26), "Right Pad");
+    // trackpads (click is remappable: left pad = src 20, right pad = src 19)
+    squarePad(70,  360, 110, 20, bit(5, 0x02), rd16(18), rd16(20), "Left Pad");
+    squarePad(320, 360, 110, 19, bit(4, 0x20), rd16(24), rd16(26), "Right Pad");
     // paddles + grips
     rrect(16,  560, 74, 26, 15, srcPressed(15), "L4");
     rrect(96,  560, 74, 26, 16, srcPressed(16), "L5");
@@ -1084,7 +1115,6 @@ void TrayApp::LoadProfileSettings(HKEY key) {
     m_controller->SetTrackpadMouseEnabled(rb(L"TrackpadMouse",   false));
     m_controller->SetScrollWheelEnabled  (rb(L"ScrollWheel",     false));
     m_controller->SetInvertScroll        (rb(L"InvertScroll",    false));
-    m_controller->SetBackButtonsEnabled  (rb(L"BackButtons",     false));
     m_controller->SetUseLeftTrackpad     (rb(L"UseLeftTrackpad", false));
     m_controller->SetTrackpadSensitivity (static_cast<int>(rd(L"TrackpadSensitivity", 35)));
     m_controller->SetScrollSensitivity   (static_cast<int>(rd(L"ScrollSensitivity",   30)));
@@ -1125,7 +1155,6 @@ void TrayApp::SaveProfileSettings(HKEY key) {
     wb(L"TrackpadMouse",   m_controller->IsTrackpadMouseEnabled());
     wb(L"ScrollWheel",     m_controller->IsScrollWheelEnabled());
     wb(L"InvertScroll",    m_controller->IsInvertScroll());
-    wb(L"BackButtons",     m_controller->IsBackButtonsEnabled());
     wb(L"UseLeftTrackpad", m_controller->IsUseLeftTrackpad());
     wb(L"HapticOnClick",   m_controller->IsHapticOnClick());
     wb(L"HapticOnMove",    m_controller->IsHapticOnMove());
