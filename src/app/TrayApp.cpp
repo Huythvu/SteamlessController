@@ -636,12 +636,12 @@ void TrayApp::DrawTabs() {
         toggle("Buzz on mouse movement", c.IsHapticOnMove(),
                &ControllerManager::SetHapticOnMove);
 
-        // Scroll-pad feedback. "On movement" is a vertical-axis texture at the
-        // SAME density as the mouse (1 tick per mm of vertical travel), so the
-        // pads feel matched; "Per scroll step" is a notch buzz tied to scrolling.
+        // Scroll-pad feedback, at the SAME density as the mouse texture.
+        // "On movement" = all-axis (identical to the mouse pad); "On scroll" =
+        // vertical travel only (matches vertical scrolling).
         ImGui::TextUnformatted("Scroll pad feedback");
         int smode = c.GetScrollHapticMode();
-        const char* smodes[3] = { "Off", "On movement", "Per scroll step" };
+        const char* smodes[3] = { "Off", "On movement", "On scroll (vertical)" };
         for (int m = 0; m < 3; ++m) {
             ImGui::SameLine();
             if (ImGui::RadioButton(smodes[m], smode == m)) {
@@ -650,16 +650,10 @@ void TrayApp::DrawTabs() {
             }
         }
 
-        // Shared movement density (mouse texture + scroll "on movement").
-        ImGui::BeginDisabled(!c.IsHapticOnMove() && c.GetScrollHapticMode() != 1);
+        // One shared movement density: mouse texture + both scroll modes.
+        ImGui::BeginDisabled(!c.IsHapticOnMove() && c.GetScrollHapticMode() == 0);
         slider("Movement intensity", c.GetHapticIntensity(), 1, 100,
                &ControllerManager::SetHapticIntensity);
-        ImGui::EndDisabled();
-
-        // Per-scroll-step density (only used by the notch mode).
-        ImGui::BeginDisabled(c.GetScrollHapticMode() != 2);
-        slider("Scroll-step intensity", c.GetScrollHapticIntensity(), 1, 100,
-               &ControllerManager::SetScrollHapticIntensity);
         ImGui::EndDisabled();
 
         ImGui::Spacing();
@@ -1152,9 +1146,8 @@ void TrayApp::LoadProfileSettings(HKEY key) {
     m_controller->SetRightStickSensitivity(static_cast<int>(rd(L"RightStickSens",      50)));
     m_controller->SetHapticOnClick        (rb(L"HapticOnClick", false));
     m_controller->SetHapticOnMove         (rb(L"HapticOnMove", false));
-    m_controller->SetScrollHapticMode     (static_cast<int>(rd(L"ScrollHapticMode", 0)));  // 0 off,1 move,2 step
+    m_controller->SetScrollHapticMode     (static_cast<int>(rd(L"ScrollHapticMode", 0)));  // 0 off,1 movement,2 scroll
     m_controller->SetHapticIntensity      (static_cast<int>(rd(L"HapticDensity",        50)));
-    m_controller->SetScrollHapticIntensity(static_cast<int>(rd(L"ScrollHapticDensity",   50)));
     m_controller->SetHapticClickHardness  (static_cast<int>(rd(L"HapticClickHardness",    2)));
 
     m_controller->ResetButtonMappings();
@@ -1197,7 +1190,6 @@ void TrayApp::SaveProfileSettings(HKEY key) {
     wd(L"HapticDensity",       static_cast<DWORD>(m_controller->GetHapticIntensity()));
     wd(L"HapticClickHardness", static_cast<DWORD>(m_controller->GetHapticClickHardness()));
     wd(L"ScrollHapticMode",    static_cast<DWORD>(m_controller->GetScrollHapticMode()));
-    wd(L"ScrollHapticDensity", static_cast<DWORD>(m_controller->GetScrollHapticIntensity()));
 
     for (int i = 0; i < InputMapper::kSourceCount; ++i) {
         InputMapper::Action a = m_controller->GetButtonAction(i);

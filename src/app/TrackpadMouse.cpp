@@ -39,7 +39,6 @@ void TrackpadMouse::Reset() {
     m_scrollAccum    = 0.0f;
     m_scrollMoveAccum = 0.0f;
     m_moveAccum      = 0.0f;
-    m_scrollStepAccum = 0;
     m_hpMt = m_hpSt  = false;
     m_lastMouseMove.store(0);
     m_lastScrollMove.store(0);
@@ -109,15 +108,6 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
                     input.mi.dwFlags   = MOUSEEVENTF_WHEEL;
                     input.mi.mouseData = static_cast<DWORD>(ticks);
                     SendInput(1, &input, sizeof(INPUT));
-                    // Buzz every N scroll steps (a notched-wheel feel; N from the
-                    // scroll-step intensity, so it can be tamed).
-                    if (m_scrollStepHaptic) {
-                        m_scrollStepAccum += ticks < 0 ? -ticks : ticks;
-                        if (m_scrollStepAccum >= m_scrollStepInterval) {
-                            m_scrollStepAccum = 0;
-                            fireHaptic(scrollPadSide(), HAPTIC_MOVE);
-                        }
-                    }
                 }
             }
         }
@@ -165,6 +155,9 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
         else                accum = 0.0f;
         prevTouch = pad.touching;
     };
-    moveTexture(mp, m_hapticOnMove,     false, m_hpMt, m_hpMx, m_hpMy, m_moveAccum,       mousePadSide());
-    moveTexture(sp, m_scrollMoveHaptic, true,  m_hpSt, m_hpSx, m_hpSy, m_scrollMoveAccum, scrollPadSide());
+    // Mouse pad: all-axis. Scroll pad: mode 1 = all-axis (identical to mouse),
+    // mode 2 = vertical-only (matches vertical scrolling). Same density for all.
+    moveTexture(mp, m_hapticOnMove,          false, m_hpMt, m_hpMx, m_hpMy, m_moveAccum,       mousePadSide());
+    moveTexture(sp, m_scrollHapticMode != 0, m_scrollHapticMode == 2,
+                m_hpSt, m_hpSx, m_hpSy, m_scrollMoveAccum, scrollPadSide());
 }

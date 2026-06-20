@@ -77,15 +77,13 @@ public:
     // Trackpad haptic feedback (on the pad being used).
     void SetHapticOnClick(bool enabled);
     void SetHapticOnMove(bool enabled);
-    void SetScrollHapticMode(int mode);  // 0 off, 1 on movement (vertical), 2 per scroll step
-    void SetHapticIntensity(int pos);    // 1..100 (movement density: mouse + scroll on-movement)
-    void SetScrollHapticIntensity(int pos);  // 1..100 (per-scroll-step density)
+    void SetScrollHapticMode(int mode);  // 0 off, 1 on movement (all axes), 2 on scroll (vertical)
+    void SetHapticIntensity(int pos);    // 1..100 (movement density, shared)
     void SetHapticClickHardness(int level);  // 1..3 (soft/medium/hard)
     bool IsHapticOnClick()    const { return m_hapticOnClick; }
     bool IsHapticOnMove()     const { return m_hapticOnMove; }
     int  GetScrollHapticMode() const { return m_scrollHapticMode; }
     int  GetHapticIntensity() const { return m_hapticIntensity; }
-    int  GetScrollHapticIntensity() const { return m_scrollHapticIntensity; }
     int  GetHapticClickHardness() const { return m_clickHardness; }
 
     // Button remapping. Thread-safe (serialized against the read loop).
@@ -123,9 +121,8 @@ private:
     bool                               m_autoEnable           = false;
     bool                               m_hapticOnClick        = false;
     bool                               m_hapticOnMove         = false;
-    int                                m_scrollHapticMode     = 0;    // 0 off, 1 on movement, 2 per step
+    int                                m_scrollHapticMode     = 0;    // 0 off, 1 all-axis, 2 vertical
     int                                m_hapticIntensity      = 50;   // 1..100 (50 = baseline)
-    int                                m_scrollHapticIntensity = 50;  // 1..100 (scroll-step density)
     int                                m_clickHardness        = 2;    // 1..3 (soft/medium/hard)
     int                                m_trackpadSensitivity  = 35;   // 1..100
     int                                m_scrollSensitivity    = 30;   // 1..100
