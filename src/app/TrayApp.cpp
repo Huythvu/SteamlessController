@@ -565,26 +565,9 @@ static std::string ActionLabel(InputMapper::Action a) {
     return "?";
 }
 
-// Where each physical button sits on the diagram (canvas-local pixels) and the
-// short label drawn inside it. Indices refer to InputMapper::kSources.
-namespace {
-struct Spot { int idx; float x, y, r; const char* label; };
-constexpr float kCanvasW = 600.0f, kCanvasH = 380.0f;
-const Spot kLayout[] = {
-    { 4,   95,  50, 26, "LB" },   { 5,  505,  50, 26, "RB" },
-    { 6,  120, 165, 32, "LS" },   { 7,  400, 270, 32, "RS" },
-    { 11, 235, 215, 20, "Up" },   { 12, 235, 305, 20, "Dn" },
-    { 13, 190, 260, 20, "Lt" },   { 14, 280, 260, 20, "Rt" },
-    { 3,  500, 120, 24, "Y" },    { 0,  500, 210, 24, "A" },
-    { 2,  455, 165, 24, "X" },    { 1,  545, 165, 24, "B" },
-    { 9,  280, 165, 18, "View" }, { 10, 310, 120, 16, "Steam" }, { 8, 340, 165, 18, "Menu" },
-    { 15, 160, 350, 18, "L4" },   { 16, 215, 350, 18, "L5" },
-    { 17, 385, 350, 18, "R4" },   { 18, 440, 350, 18, "R5" },
-};
-}
-
-// Controller tab: a visual gamepad whose buttons light up live and are remapped
-// by clicking one and then pressing the key to bind (JoyToKey style).
+// Controller tab: the same gamepad layout as the original input monitor, drawn
+// to scale. Real (remappable) buttons are clickable: click one then press a key
+// to bind it (JoyToKey style). A legend on the right lists every mapping.
 void TrayApp::DrawControllerTab() {
     uint8_t rep[64];
     size_t n = m_controller->GetLatestReport(rep, sizeof(rep));
@@ -597,64 +580,186 @@ void TrayApp::DrawControllerTab() {
     ImGui::SameLine(0, 16);
     if (m_recordIndex >= 0)
         ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.20f, 1.0f),
-            "Press a key for \"%s\"  (Esc cancel, Del clear)",
+            "Press a key for \"%s\"   (Esc cancel, Del clear)",
             Narrow(InputMapper::kSources[m_recordIndex].name).c_str());
     else
-        ImGui::TextDisabled("Click a button, then press a key to bind it. Right-click = reset to default.");
+        ImGui::TextDisabled("Click a button then press a key. Right-click a button = reset to default.");
     ImGui::Spacing();
 
+    const float S = 1.2f;                 // scale the original pixel layout
+    const float baseW = 506.0f, baseH = 600.0f;
+    const float canvasW = baseW * S, canvasH = baseH * S;
+
+    ImGui::BeginChild("diagram", ImVec2(canvasW + 6, canvasH + 6), false);
     ImVec2 o = ImGui::GetCursorScreenPos();
-    ImGui::Dummy(ImVec2(kCanvasW, kCanvasH));        // reserve the canvas
+    ImGui::Dummy(ImVec2(canvasW, canvasH));
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->AddRectFilled(o, ImVec2(o.x + kCanvasW, o.y + kCanvasH),
-                      ImGui::GetColorU32(ImGuiCol_FrameBg), 12.0f);
-    dl->AddRect(o, ImVec2(o.x + kCanvasW, o.y + kCanvasH),
-                ImGui::GetColorU32(ImGuiCol_Border), 12.0f);
 
-    ImU32 border = ImGui::GetColorU32(ImGuiCol_Border);
+    ImU32 border  = IM_COL32(120, 124, 132, 255);
     ImU32 textCol = ImGui::GetColorU32(ImGuiCol_Text);
-    for (const Spot& sp : kLayout) {
-        const InputMapper::Source& s = InputMapper::kSources[sp.idx];
-        bool live = (n > s.byteIndex) && (rep[s.byteIndex] & s.mask) != 0;
-        bool rec  = (m_recordIndex == sp.idx);
-        ImVec2 c(o.x + sp.x, o.y + sp.y);
+    ImU32 dotCol  = IM_COL32(80, 180, 255, 255);
+    auto PX = [&](float v) { return o.x + v * S; };
+    auto PY = [&](float v) { return o.y + v * S; };
+    auto bit  = [&](int byteIdx, uint8_t mask) {
+        return n > static_cast<size_t>(byteIdx) && (rep[byteIdx] & mask) != 0;
+    };
+    auto rd16 = [&](int idx) -> int16_t {
+        int16_t v = 0; if (n >= static_cast<size_t>(idx) + 2) std::memcpy(&v, rep + idx, 2);
+        return v;
+    };
+    auto srcPressed = [&](int idx) {
+        const auto& s = InputMapper::kSources[idx];
+        return bit(s.byteIndex, s.mask);
+    };
 
-        ImGui::SetCursorScreenPos(ImVec2(c.x - sp.r, c.y - sp.r));
-        ImGui::InvisibleButton((std::string("##spot") + std::to_string(sp.idx)).c_str(),
-                               ImVec2(sp.r * 2, sp.r * 2),
+    // Click target for a remappable source over a base-coords rect. Returns hover.
+    auto remapHit = [&](int idx, float x, float y, float w, float h) -> bool {
+        ImGui::SetCursorScreenPos(ImVec2(PX(x), PY(y)));
+        ImGui::InvisibleButton((std::string("##s") + std::to_string(idx)).c_str(),
+                               ImVec2(w * S, h * S),
                                ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
-        bool hovered = ImGui::IsItemHovered();
-        if (ImGui::IsItemClicked(ImGuiMouseButton_Left))  m_recordIndex = sp.idx;
+        bool hov = ImGui::IsItemHovered();
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Left))  m_recordIndex = idx;
         if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
-            m_controller->SetButtonAction(sp.idx, s.def);
+            m_controller->SetButtonAction(idx, InputMapper::kSources[idx].def);
+            SaveSettings();
+            if (m_recordIndex == idx) m_recordIndex = -1;
+        }
+        if (hov)
+            ImGui::SetTooltip("%s  ->  %s", Narrow(InputMapper::kSources[idx].name).c_str(),
+                              ActionLabel(m_controller->GetButtonAction(idx)).c_str());
+        return hov;
+    };
+    auto fillCol = [&](int idx, bool pressed, bool hov) -> ImU32 {
+        if (idx >= 0 && m_recordIndex == idx) return IM_COL32(240, 200, 50, 255);
+        if (pressed) return IM_COL32(50, 180, 80, 255);
+        if (hov)     return IM_COL32(95, 100, 110, 255);
+        return IM_COL32(70, 74, 82, 255);
+    };
+    auto centerText = [&](float l, float t, float r, float b, const char* s) {
+        ImVec2 ts = ImGui::CalcTextSize(s);
+        dl->AddText(ImVec2((l + r) / 2 - ts.x / 2, (t + b) / 2 - ts.y / 2), textCol, s);
+    };
+
+    // --- shapes (base coords) ---
+    auto rrect = [&](float x, float y, float w, float h, int idx, bool pressed, const char* s) {
+        bool hov = idx >= 0 ? remapHit(idx, x, y, w, h) : false;
+        dl->AddRectFilled(ImVec2(PX(x), PY(y)), ImVec2(PX(x + w), PY(y + h)),
+                          fillCol(idx, pressed, hov), 6.0f * S);
+        dl->AddRect(ImVec2(PX(x), PY(y)), ImVec2(PX(x + w), PY(y + h)), border, 6.0f * S);
+        centerText(PX(x), PY(y), PX(x + w), PY(y + h), s);
+    };
+    auto circle = [&](float cx, float cy, float r, int idx, bool pressed, const char* s) {
+        bool hov = idx >= 0 ? remapHit(idx, cx - r, cy - r, 2 * r, 2 * r) : false;
+        ImVec2 c(PX(cx), PY(cy));
+        dl->AddCircleFilled(c, r * S, fillCol(idx, pressed, hov), 32);
+        dl->AddCircle(c, r * S, border, 32);
+        centerText(PX(cx - r), PY(cy - r), PX(cx + r), PY(cy + r), s);
+    };
+    auto roundPad = [&](float cx, float cy, float r, int idx, bool clicked,
+                        int16_t vx, int16_t vy, const char* s) {
+        bool hov = idx >= 0 ? remapHit(idx, cx - r, cy - r, 2 * r, 2 * r) : false;
+        ImVec2 c(PX(cx), PY(cy));
+        dl->AddCircleFilled(c, r * S, fillCol(idx, clicked, hov), 40);
+        dl->AddCircle(c, r * S, border, 40);
+        float half = (r - 9) * S;
+        dl->AddCircleFilled(ImVec2(c.x + vx / 32767.0f * half, c.y - vy / 32767.0f * half),
+                            7.0f, dotCol);
+        ImVec2 ts = ImGui::CalcTextSize(s);
+        dl->AddText(ImVec2(c.x - ts.x / 2, PY(cy + r) + 3), textCol, s);
+    };
+    auto squarePad = [&](float x, float y, float size, bool clicked, bool active,
+                         int16_t vx, int16_t vy, const char* s) {
+        ImVec2 a(PX(x), PY(y)), b(PX(x + size), PY(y + size));
+        dl->AddRectFilled(a, b, clicked ? IM_COL32(50, 180, 80, 255) : IM_COL32(55, 58, 65, 255),
+                          14.0f * S);
+        dl->AddRect(a, b, border, 14.0f * S);
+        if (active) {
+            float half = (size / 2 - 10) * S;
+            ImVec2 c((a.x + b.x) / 2, (a.y + b.y) / 2);
+            dl->AddCircleFilled(ImVec2(c.x + vx / 32767.0f * half, c.y - vy / 32767.0f * half),
+                                7.0f, dotCol);
+        }
+        ImVec2 ts = ImGui::CalcTextSize(s);
+        dl->AddText(ImVec2((a.x + b.x) / 2 - ts.x / 2, b.y + 3), textCol, s);
+    };
+    auto bar = [&](float x, float y, float w, float h, float frac, const char* s) {
+        ImVec2 a(PX(x), PY(y)), b(PX(x + w), PY(y + h));
+        dl->AddRectFilled(a, b, IM_COL32(55, 58, 65, 255), 5.0f * S);
+        if (frac > 0.02f)
+            dl->AddRectFilled(a, ImVec2(PX(x + w * frac), PY(y + h)),
+                              IM_COL32(50, 180, 80, 255), 5.0f * S);
+        dl->AddRect(a, b, border, 5.0f * S);
+        centerText(a.x, a.y, b.x, b.y, s);
+    };
+    auto trig = [&](int idx) -> float {
+        int16_t v = rd16(idx);
+        return v <= 0 ? 0.0f : v / 32767.0f;
+    };
+
+    // --- controller body ---
+    dl->AddRectFilled(ImVec2(PX(30), PY(80)), ImVec2(PX(470), PY(540)),
+                      IM_COL32(48, 50, 56, 255), 60.0f * S);
+    dl->AddRect(ImVec2(PX(30), PY(80)), ImVec2(PX(470), PY(540)), border, 60.0f * S);
+
+    // triggers + bumpers
+    bar(54, 22, 96, 18, trig(6), "LT");
+    bar(350, 22, 96, 18, trig(8), "RT");
+    rrect(54, 46, 96, 24, 4, srcPressed(4), "LB");
+    rrect(350, 46, 96, 24, 5, srcPressed(5), "RB");
+    // d-pad
+    rrect(103, 126, 32, 28, 11, srcPressed(11), "Up");
+    rrect(103, 182, 32, 28, 12, srcPressed(12), "Dn");
+    rrect(71,  154, 32, 28, 13, srcPressed(13), "Lt");
+    rrect(135, 154, 32, 28, 14, srcPressed(14), "Rt");
+    // face buttons
+    circle(382, 132, 18, 3, srcPressed(3), "Y");
+    circle(382, 188, 18, 0, srcPressed(0), "A");
+    circle(353, 160, 18, 2, srcPressed(2), "X");
+    circle(411, 160, 18, 1, srcPressed(1), "B");
+    // center buttons
+    circle(214, 158, 14, 9,  srcPressed(9),  "V");
+    circle(286, 158, 14, 8,  srcPressed(8),  "M");
+    circle(250, 160, 18, 10, srcPressed(10), "S");
+    // sticks (clickable = stick-click)
+    roundPad(125, 280, 46, 6, srcPressed(6), rd16(10), rd16(12), "Left Stick");
+    roundPad(375, 280, 46, 7, srcPressed(7), rd16(14), rd16(16), "Right Stick");
+    // trackpads (live only, not remappable)
+    squarePad(70,  360, 110, bit(5, 0x04), bit(5, 0x02), rd16(18), rd16(20), "Left Pad");
+    squarePad(320, 360, 110, bit(4, 0x40), bit(4, 0x20), rd16(24), rd16(26), "Right Pad");
+    // paddles + grips
+    rrect(16,  560, 74, 26, 15, srcPressed(15), "L4");
+    rrect(96,  560, 74, 26, 16, srcPressed(16), "L5");
+    rrect(176, 560, 74, 26, -1, bit(5, 0x20), "L Grip");
+    rrect(256, 560, 74, 26, -1, bit(5, 0x10), "R Grip");
+    rrect(336, 560, 74, 26, 17, srcPressed(17), "R4");
+    rrect(416, 560, 74, 26, 18, srcPressed(18), "R5");
+
+    ImGui::SetCursorScreenPos(ImVec2(o.x, o.y + canvasH));
+    ImGui::EndChild();
+
+    // --- legend: every mapping, clear and clickable ---
+    ImGui::SameLine();
+    ImGui::BeginChild("legend", ImVec2(0, canvasH + 6), true);
+    ImGui::TextDisabled("BUTTON  ->  MAPPING");
+    ImGui::Separator();
+    for (int i = 0; i < InputMapper::kSourceCount; ++i) {
+        bool pressed = srcPressed(i);
+        bool rec     = (m_recordIndex == i);
+        char row[96];
+        std::snprintf(row, sizeof(row), "%-13s  %s##leg%d",
+                      Narrow(InputMapper::kSources[i].name).c_str(),
+                      ActionLabel(m_controller->GetButtonAction(i)).c_str(), i);
+        if (pressed) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.35f, 0.85f, 0.45f, 1.0f));
+        if (ImGui::Selectable(row, rec)) m_recordIndex = i;
+        if (pressed) ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+            m_controller->SetButtonAction(i, InputMapper::kSources[i].def);
             SaveSettings();
             if (rec) m_recordIndex = -1;
         }
-        if (hovered)
-            ImGui::SetTooltip("%s  ->  %s", Narrow(s.name).c_str(),
-                              ActionLabel(m_controller->GetButtonAction(sp.idx)).c_str());
-
-        ImU32 fill = rec   ? IM_COL32(240, 200, 50, 255)
-                   : live  ? IM_COL32(60, 150, 240, 255)
-                   : hovered ? IM_COL32(90, 95, 105, 255)
-                             : IM_COL32(60, 63, 70, 255);
-        dl->AddCircleFilled(c, sp.r, fill, 32);
-        dl->AddCircle(c, sp.r, border, 32);
-        ImVec2 ts = ImGui::CalcTextSize(sp.label);
-        dl->AddText(ImVec2(c.x - ts.x / 2, c.y - ts.y / 2), textCol, sp.label);
     }
-    ImGui::SetCursorScreenPos(ImVec2(o.x, o.y + kCanvasH));
-
-    ImGui::Spacing();
-    auto trig = [&](int off) -> float {
-        if (n < static_cast<size_t>(off) + 2) return 0.0f;
-        int16_t v; std::memcpy(&v, rep + off, 2);
-        float f = v / 32767.0f;
-        return f < 0 ? 0 : (f > 1 ? 1 : f);
-    };
-    ImGui::TextDisabled("TRIGGERS");
-    ImGui::ProgressBar(trig(6), ImVec2(-1, 0), "");
-    ImGui::ProgressBar(trig(8), ImVec2(-1, 0), "");
+    ImGui::EndChild();
 }
 
 // A square stick view: outer bounds, the circular deadzone ring, and a dot
