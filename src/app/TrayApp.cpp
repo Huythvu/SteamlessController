@@ -94,9 +94,27 @@ bool TrayApp::Init(HINSTANCE hInstance) {
     wc.hIconSm       = m_iconOff;
     if (!RegisterClassExW(&wc)) return false;
 
+    // Restore the last window position/size (falls back to a sensible default).
+    int wx = CW_USEDEFAULT, wy = CW_USEDEFAULT, ww = 1350, wh = 840;
+    {
+        HKEY k;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, REG_KEY, 0, KEY_READ, &k) == ERROR_SUCCESS) {
+            auto rd = [&](const wchar_t* name, int& out) {
+                DWORD v = 0, sz = sizeof(v);
+                if (RegQueryValueExW(k, name, nullptr, nullptr,
+                                     reinterpret_cast<LPBYTE>(&v), &sz) == ERROR_SUCCESS)
+                    out = static_cast<int>(v);
+            };
+            rd(L"WinX", wx); rd(L"WinY", wy); rd(L"WinW", ww); rd(L"WinH", wh);
+            RegCloseKey(k);
+        }
+        if (ww < 600) ww = 1350;
+        if (wh < 400) wh = 840;
+    }
+
     m_hwnd = CreateWindowExW(0, WNDCLASS_NAME, L"SteamlessController",
-                             WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
-                             1350, 840, nullptr, nullptr, hInstance, nullptr);
+                             WS_OVERLAPPEDWINDOW, wx, wy, ww, wh,
+                             nullptr, nullptr, hInstance, nullptr);
     if (!m_hwnd) return false;
 
     // Dark non-client area (title bar / borders) to match the ImGui theme.
@@ -211,20 +229,45 @@ int TrayApp::Run() {
             WaitMessage();
             continue;
         }
-
-        ImGui_ImplDX11_NewFrame();
-        ImGui_ImplWin32_NewFrame();
-        ImGui::NewFrame();
-        DrawUI();
-        ImGui::Render();
-
-        const float clear[4] = { 0.09f, 0.09f, 0.10f, 1.0f };
-        m_ctx->OMSetRenderTargets(1, &m_rtv, nullptr);
-        m_ctx->ClearRenderTargetView(m_rtv, clear);
-        ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-        m_swap->Present(1, 0);     // vsync caps to the monitor refresh
+        RenderFrame();
     }
     return 0;
+}
+
+void TrayApp::RenderFrame() {
+    if (!m_rtv) return;
+    ImGui_ImplDX11_NewFrame();
+    ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
+    DrawUI();
+    ImGui::Render();
+
+    const float clear[4] = { 0.09f, 0.09f, 0.10f, 1.0f };
+    m_ctx->OMSetRenderTargets(1, &m_rtv, nullptr);
+    m_ctx->ClearRenderTargetView(m_rtv, clear);
+    ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+    m_swap->Present(1, 0);     // vsync caps to the monitor refresh
+}
+
+void TrayApp::SaveWindowPlacement() {
+    if (!m_hwnd) return;
+    WINDOWPLACEMENT wp{};
+    wp.length = sizeof(wp);
+    if (!GetWindowPlacement(m_hwnd, &wp)) return;
+    const RECT& r = wp.rcNormalPosition;   // size when not minimized/maximized
+    HKEY k;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, REG_KEY, 0, nullptr, REG_OPTION_NON_VOLATILE,
+                        KEY_WRITE, nullptr, &k, nullptr) == ERROR_SUCCESS) {
+        auto wd = [&](const wchar_t* name, int v) {
+            DWORD dw = static_cast<DWORD>(v);
+            RegSetValueExW(k, name, 0, REG_DWORD, reinterpret_cast<const BYTE*>(&dw), sizeof(dw));
+        };
+        wd(L"WinX", r.left);
+        wd(L"WinY", r.top);
+        wd(L"WinW", r.right - r.left);
+        wd(L"WinH", r.bottom - r.top);
+        RegCloseKey(k);
+    }
 }
 
 LRESULT CALLBACK TrayApp::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -262,7 +305,12 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             CleanupRenderTarget();
             m_swap->ResizeBuffers(0, LOWORD(lp), HIWORD(lp), DXGI_FORMAT_UNKNOWN, 0);
             CreateRenderTarget();
+            if (m_visible) RenderFrame();   // repaint live while dragging the edge
         }
+        return 0;
+
+    case WM_EXITSIZEMOVE:
+        SaveWindowPlacement();
         return 0;
 
     case WM_TRAY:
@@ -277,7 +325,10 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
     case WM_COMMAND:
         if (LOWORD(wp) == IDM_OPEN) ShowMainWindow();
-        else if (LOWORD(wp) == IDM_EXIT) { m_controller->DisableGameMode(); m_done = true; PostQuitMessage(0); }
+        else if (LOWORD(wp) == IDM_EXIT) {
+            SaveWindowPlacement();
+            m_controller->DisableGameMode(); m_done = true; PostQuitMessage(0);
+        }
         return 0;
 
     case WM_STATE_CHANGED:
@@ -359,6 +410,10 @@ void TrayApp::DrawTopBar() {
         else      m_controller->EnableGameMode();
     }
     ImGui::EndDisabled();
+
+    ImGui::SameLine(0, 12);
+    if (ImGui::Button("Refresh"))   // re-scan for a controller turned on just now
+        m_controller->OnDeviceChange();
 
     ImGui::SameLine(0, 24);
     int batt = m_controller->GetBatteryPercent();
@@ -580,12 +635,13 @@ void TrayApp::DrawControllerTab() {
     ImGui::SameLine(0, 16);
     if (m_recordIndex >= 0)
         ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.20f, 1.0f),
-            "Press a key for \"%s\"   (Esc cancel, Del clear)",
+            "Binding \"%s\": press a key or pick a gamepad button (Esc cancel)",
             Narrow(InputMapper::kSources[m_recordIndex].name).c_str());
     else
-        ImGui::TextDisabled("Click a button then press a key. Right-click a button = reset to default.");
+        ImGui::TextDisabled("Click a button to remap it. Right-click a button = reset to default.");
     ImGui::Spacing();
 
+    bool armOpen = false;                 // a button was just clicked to remap
     const float S = 1.2f;                 // scale the original pixel layout
     const float baseW = 506.0f, baseH = 600.0f;
     const float canvasW = baseW * S, canvasH = baseH * S;
@@ -619,7 +675,7 @@ void TrayApp::DrawControllerTab() {
                                ImVec2(w * S, h * S),
                                ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
         bool hov = ImGui::IsItemHovered();
-        if (ImGui::IsItemClicked(ImGuiMouseButton_Left))  m_recordIndex = idx;
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) { m_recordIndex = idx; armOpen = true; }
         if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
             m_controller->SetButtonAction(idx, InputMapper::kSources[idx].def);
             SaveSettings();
@@ -751,7 +807,7 @@ void TrayApp::DrawControllerTab() {
                       Narrow(InputMapper::kSources[i].name).c_str(),
                       ActionLabel(m_controller->GetButtonAction(i)).c_str(), i);
         if (pressed) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.35f, 0.85f, 0.45f, 1.0f));
-        if (ImGui::Selectable(row, rec)) m_recordIndex = i;
+        if (ImGui::Selectable(row, rec)) { m_recordIndex = i; armOpen = true; }
         if (pressed) ImGui::PopStyleColor();
         if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
             m_controller->SetButtonAction(i, InputMapper::kSources[i].def);
@@ -760,6 +816,38 @@ void TrayApp::DrawControllerTab() {
         }
     }
     ImGui::EndChild();
+
+    // Remap popup: keyboard binding happens by pressing a key (handled in the
+    // window proc); this popup adds gamepad-button targets and None/Default.
+    if (armOpen) ImGui::OpenPopup("remap");
+    if (ImGui::BeginPopup("remap")) {
+        if (m_recordIndex < 0) {
+            ImGui::CloseCurrentPopup();
+        } else {
+            int idx = m_recordIndex;
+            ImGui::TextUnformatted(Narrow(InputMapper::kSources[idx].name).c_str());
+            ImGui::TextDisabled("Press a key, or pick a gamepad button:");
+            ImGui::Separator();
+            auto assign = [&](InputMapper::Action a) {
+                m_controller->SetButtonAction(idx, a);
+                SaveSettings();
+                m_recordIndex = -1;
+                ImGui::CloseCurrentPopup();
+            };
+            for (int i = 0; i < InputMapper::kXboxTargetCount; ++i) {
+                const InputMapper::Target& t = InputMapper::kXboxTargets[i];
+                if (i % 3 != 0) ImGui::SameLine();
+                if (ImGui::Button((Narrow(t.name) + "##xb" + std::to_string(i)).c_str(),
+                                  ImVec2(150, 0)))
+                    assign({ t.type, t.value });
+            }
+            ImGui::Separator();
+            if (ImGui::Button("None"))    assign({ InputMapper::Type::None, 0 });
+            ImGui::SameLine();
+            if (ImGui::Button("Default")) assign(InputMapper::kSources[idx].def);
+        }
+        ImGui::EndPopup();
+    }
 }
 
 // A square stick view: outer bounds, the circular deadzone ring, and a dot
@@ -849,6 +937,7 @@ void TrayApp::ShowMainWindow() {
 }
 
 void TrayApp::HideToTray() {
+    SaveWindowPlacement();
     ShowWindow(m_hwnd, SW_HIDE);
     m_visible = false;
 }

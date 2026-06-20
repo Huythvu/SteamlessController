@@ -27,6 +27,8 @@ private:
 
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
     LRESULT HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
+    void RenderFrame();
+    void SaveWindowPlacement();
 
     // --- UI (one frame) ---
     void DrawUI();
