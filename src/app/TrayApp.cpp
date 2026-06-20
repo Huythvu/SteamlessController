@@ -559,10 +559,23 @@ void TrayApp::DrawTabs() {
         ImGui::Spacing();
         toggle("Buzz on click", c.IsHapticOnClick(),
                &ControllerManager::SetHapticOnClick);
+        ImGui::BeginDisabled(!c.IsHapticOnClick());
+        ImGui::TextUnformatted("Click hardness");
+        int hard = c.GetHapticClickHardness();
+        const char* names[3] = { "Soft", "Medium", "Hard" };
+        for (int lvl = 1; lvl <= 3; ++lvl) {
+            ImGui::SameLine();
+            if (ImGui::RadioButton(names[lvl - 1], hard == lvl)) {
+                c.SetHapticClickHardness(lvl);
+                SaveSettings();
+            }
+        }
+        ImGui::EndDisabled();
+
         toggle("Buzz on mouse / scroll movement", c.IsHapticOnMove(),
                &ControllerManager::SetHapticOnMove);
-        ImGui::BeginDisabled(!c.IsHapticOnClick() && !c.IsHapticOnMove());
-        slider("Intensity (clicks per movement)", c.GetHapticIntensity(), 1, 100,
+        ImGui::BeginDisabled(!c.IsHapticOnMove());
+        slider("Movement intensity (clicks per movement)", c.GetHapticIntensity(), 1, 100,
                &ControllerManager::SetHapticIntensity);
         ImGui::EndDisabled();
 
@@ -1002,6 +1015,7 @@ void TrayApp::LoadProfileSettings(HKEY key) {
     m_controller->SetHapticOnClick        (rb(L"HapticOnClick", false));
     m_controller->SetHapticOnMove         (rb(L"HapticOnMove",  false));
     m_controller->SetHapticIntensity      (static_cast<int>(rd(L"HapticDensity",        50)));
+    m_controller->SetHapticClickHardness  (static_cast<int>(rd(L"HapticClickHardness",    2)));
 
     m_controller->ResetButtonMappings();
     for (int i = 0; i < InputMapper::kSourceCount; ++i) {
@@ -1042,6 +1056,7 @@ void TrayApp::SaveProfileSettings(HKEY key) {
     wd(L"LeftStickSens",       static_cast<DWORD>(m_controller->GetLeftStickSensitivity()));
     wd(L"RightStickSens",      static_cast<DWORD>(m_controller->GetRightStickSensitivity()));
     wd(L"HapticDensity",       static_cast<DWORD>(m_controller->GetHapticIntensity()));
+    wd(L"HapticClickHardness", static_cast<DWORD>(m_controller->GetHapticClickHardness()));
 
     for (int i = 0; i < InputMapper::kSourceCount; ++i) {
         InputMapper::Action a = m_controller->GetButtonAction(i);

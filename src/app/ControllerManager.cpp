@@ -41,8 +41,8 @@ ControllerManager::ControllerManager(StateChangedFn onStateChanged)
     : m_onStateChanged(std::move(onStateChanged))
 {
     // Route trackpad haptic pulses to the physical controller.
-    m_trackpad.SetHapticSink([](uint8_t side, uint16_t amp) {
-        if (g_ctrl) g_ctrl->TrackpadHaptic(side, amp);
+    m_trackpad.SetHapticSink([](uint8_t side, uint16_t amp, uint8_t count) {
+        if (g_ctrl) g_ctrl->TrackpadHaptic(side, amp, count);
     });
     TryOpen();
 }
@@ -88,6 +88,7 @@ void ControllerManager::EnableGameMode() {
         m_trackpad.SetScrollDeadzone(ScrollDzFromPos(m_scrollDeadzone));
         m_trackpad.SetHapticOnClick(m_hapticOnClick);
         m_trackpad.SetHapticOnMove(m_hapticOnMove);
+        m_trackpad.SetClickHardness(m_clickHardness);
         m_trackpad.SetMoveTickDistance(MoveTickFromPos(m_hapticIntensity));
     }
     StartReadLoop();
@@ -154,6 +155,14 @@ void ControllerManager::SetHapticIntensity(int pos) {
     m_hapticIntensity = pos;
     std::lock_guard<std::mutex> lock(m_inputMutex);
     m_trackpad.SetMoveTickDistance(MoveTickFromPos(pos));
+}
+
+void ControllerManager::SetHapticClickHardness(int level) {
+    if (level < 1) level = 1;
+    if (level > 3) level = 3;
+    m_clickHardness = level;
+    std::lock_guard<std::mutex> lock(m_inputMutex);
+    m_trackpad.SetClickHardness(level);
 }
 
 void ControllerManager::TestHaptic() {

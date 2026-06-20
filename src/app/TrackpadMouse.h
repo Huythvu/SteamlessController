@@ -13,10 +13,11 @@ public:
     void SetSensitivity(float sensitivity)       { m_sensitivity        = sensitivity; }
     void SetScrollSensitivity(float sensitivity) { m_scrollSensitivity  = sensitivity; }
 
-    // Local trackpad haptics. The sink fires a pulse on (side, amplitude).
-    void SetHapticSink(std::function<void(uint8_t, uint16_t)> sink) { m_haptic = std::move(sink); }
+    // Local trackpad haptics. The sink fires (side, amplitude, pulse count).
+    void SetHapticSink(std::function<void(uint8_t, uint16_t, uint8_t)> sink) { m_haptic = std::move(sink); }
     void SetHapticOnClick(bool enabled)    { m_hapticOnClick = enabled; }
     void SetHapticOnMove(bool enabled)     { m_hapticOnMove  = enabled; }
+    void SetClickHardness(int level)       { m_clickHardness = level < 1 ? 1 : (level > 3 ? 3 : level); }
     void SetMoveTickDistance(float dist)   { m_moveTickDistance = dist; }   // trackpad units / tick
     void SetMouseDeadzone(int dz)          { m_mouseDeadzone  = dz; }       // per-frame units
     void SetScrollDeadzone(int dz)         { m_scrollDeadzone = dz; }
@@ -57,23 +58,29 @@ private:
     float    m_scrollSensitivity = 0.06f;
 
     // Haptics
-    std::function<void(uint8_t, uint16_t)> m_haptic;
+    std::function<void(uint8_t, uint16_t, uint8_t)> m_haptic;
     bool     m_hapticOnClick    = false;
     bool     m_hapticOnMove     = false;
+    int      m_clickHardness    = 2;         // 1=soft, 2=medium, 3=hard
     float    m_moveTickDistance = 3000.0f;   // smaller = more ticks per movement
     float    m_moveAccum        = 0.0f;      // distance since last move tick
     int      m_mouseDeadzone    = 20;        // per-frame deadzone (units)
     int      m_scrollDeadzone   = 120;
 
-    // Fixed pulse strengths (amplitude is barely perceptible, so density is
-    // the user-facing control; these just need to be "felt").
-    static constexpr float HAPTIC_CLICK = 700.0f;
+    // Move-tick pulse strength (density is the user-facing control for moves).
     static constexpr float HAPTIC_MOVE  = 600.0f;
 
     // side 0 = right pad, 1 = left pad
     uint8_t  mousePadSide()  const { return static_cast<uint8_t>(m_useLeftTrackpad ? 1 : 0); }
     uint8_t  scrollPadSide() const { return static_cast<uint8_t>(m_useLeftTrackpad ? 0 : 1); }
-    void     fireHaptic(uint8_t side, float amp) {
-        if (m_haptic) m_haptic(side, static_cast<uint16_t>(amp));
+    void     fireHaptic(uint8_t side, float amp, uint8_t count = 1) {
+        if (m_haptic) m_haptic(side, static_cast<uint16_t>(amp), count);
+    }
+    // Click feedback scaled by the 3-step hardness selector.
+    void     fireClick(uint8_t side) {
+        const float    amp   = m_clickHardness == 1 ? 700.0f
+                             : m_clickHardness == 2 ? 1600.0f : 3200.0f;
+        const uint8_t  count = static_cast<uint8_t>(m_clickHardness);  // 1..3 pulses
+        fireHaptic(side, amp, count);
     }
 };

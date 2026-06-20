@@ -117,12 +117,14 @@ bool SteamController::EnableLizardMode() {
 // Haptics (experimental)
 // ---------------------------------------------------------------------------
 
-void SteamController::TrackpadHaptic(uint8_t side, uint16_t amplitude) {
-    // Output report 0x81: [id, side, amp_lo, amp_hi, 0, 0, count=1, 0]
+void SteamController::TrackpadHaptic(uint8_t side, uint16_t amplitude, uint8_t count) {
+    // Output report 0x81: [id, side, amp_lo, amp_hi, 0, 0, count, 0]. The count
+    // byte repeats the pulse -- more pulses make a firmer-feeling click.
+    if (count < 1) count = 1;
     const uint8_t report[8] = {
         0x81, side,
         static_cast<uint8_t>(amplitude & 0xFF), static_cast<uint8_t>(amplitude >> 8),
-        0x00, 0x00, 0x01, 0x00,
+        0x00, 0x00, count, 0x00,
     };
     m_device.WriteOutputReport(report, sizeof(report));
 }

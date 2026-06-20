@@ -110,7 +110,7 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
             SendMouseButton(pad.clicking ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP);
             // Fire on both press and release for a tactile "two-way" click.
             if (m_hapticOnClick)
-                fireHaptic(mousePadSide(), HAPTIC_CLICK);
+                fireClick(mousePadSide());
             m_prevClick = pad.clicking;
         }
     }
@@ -157,7 +157,7 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
         if (pad.clicking != m_scrollPrevClick) {
             SendMouseButton(pad.clicking ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_MIDDLEUP);
             if (m_hapticOnClick)
-                fireHaptic(scrollPadSide(), HAPTIC_CLICK);
+                fireClick(scrollPadSide());
             m_scrollPrevClick = pad.clicking;
         }
     }

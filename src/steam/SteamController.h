@@ -133,7 +133,7 @@ public:
     // Haptics (output reports captured from Steam's own traffic).
     //   side: 0 / 1 selects the actuator (right / left).
     // Trackpad actuator pulse (report 0x81); rumble motor (report 0x82).
-    void TrackpadHaptic(uint8_t side, uint16_t amplitude);
+    void TrackpadHaptic(uint8_t side, uint16_t amplitude, uint8_t count = 1);
     void RumbleHaptic(uint8_t side, uint8_t intensity);
 
     // Read the next raw input report. buffer[0] = report ID on return.
