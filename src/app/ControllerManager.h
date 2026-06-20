@@ -77,10 +77,12 @@ public:
     // Trackpad haptic feedback (on the pad being used).
     void SetHapticOnClick(bool enabled);
     void SetHapticOnMove(bool enabled);
+    void SetScrollHapticMode(int mode);  // 0 off, 1 per scroll step, 2 per movement
     void SetHapticIntensity(int pos);    // 1..100
     void SetHapticClickHardness(int level);  // 1..3 (soft/medium/hard)
     bool IsHapticOnClick()    const { return m_hapticOnClick; }
     bool IsHapticOnMove()     const { return m_hapticOnMove; }
+    int  GetScrollHapticMode() const { return m_scrollHapticMode; }
     int  GetHapticIntensity() const { return m_hapticIntensity; }
     int  GetHapticClickHardness() const { return m_clickHardness; }
 
@@ -119,6 +121,7 @@ private:
     bool                               m_autoEnable           = false;
     bool                               m_hapticOnClick        = false;
     bool                               m_hapticOnMove         = false;
+    int                                m_scrollHapticMode     = 0;    // 0 off, 1 step, 2 movement
     int                                m_hapticIntensity      = 50;   // 1..100 (50 = baseline)
     int                                m_clickHardness        = 2;    // 1..3 (soft/medium/hard)
     int                                m_trackpadSensitivity  = 35;   // 1..100

@@ -16,7 +16,8 @@ public:
     // Local trackpad haptics. The sink fires (side, amplitude, pulse count).
     void SetHapticSink(std::function<void(uint8_t, uint16_t, uint8_t)> sink) { m_haptic = std::move(sink); }
     void SetHapticOnClick(bool enabled)    { m_hapticOnClick = enabled; }
-    void SetHapticOnMove(bool enabled)     { m_hapticOnMove  = enabled; }
+    void SetHapticOnMove(bool enabled)     { m_hapticOnMove  = enabled; }   // mouse pad
+    void SetScrollHapticMode(int mode)     { m_scrollHapticMode = mode; }   // 0 off, 1 per step, 2 per movement
     void SetClickHardness(int level)       { m_clickHardness = level < 1 ? 1 : (level > 3 ? 3 : level); }
     void SetMoveTickDistance(float dist)   { m_moveTickDistance = dist; }   // trackpad units / tick
     void SetMouseDeadzone(int dz)          { m_mouseDeadzone  = dz; }       // per-frame units
@@ -62,7 +63,8 @@ private:
     // Haptics
     std::function<void(uint8_t, uint16_t, uint8_t)> m_haptic;
     bool     m_hapticOnClick    = false;
-    bool     m_hapticOnMove     = false;
+    bool     m_hapticOnMove     = false;     // mouse-pad movement texture
+    int      m_scrollHapticMode = 0;         // 0 off, 1 per scroll step, 2 per movement
     int      m_clickHardness    = 2;         // 1=soft, 2=medium, 3=hard
     float    m_moveTickDistance = 3000.0f;   // smaller = more ticks per movement
     float    m_moveAccum        = 0.0f;      // distance since last move tick

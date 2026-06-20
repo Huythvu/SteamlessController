@@ -116,11 +116,14 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
                     input.mi.dwFlags   = MOUSEEVENTF_WHEEL;
                     input.mi.mouseData = static_cast<DWORD>(ticks);
                     SendInput(1, &input, sizeof(INPUT));
+                    // Mode 1: one buzz per scroll step (a notched-wheel feel).
+                    if (m_scrollHapticMode == 1)
+                        fireHaptic(scrollPadSide(), HAPTIC_MOVE);
                 }
 
-                // Same distance-based tick feedback as the mouse pad, so scroll
-                // and movement haptics feel identical (and share the density).
-                if (m_hapticOnMove) {
+                // Mode 2: distance-based texture as the finger travels, exactly
+                // like the mouse-movement haptic (shares the same density).
+                if (m_scrollHapticMode == 2) {
                     m_scrollMoveAccum += static_cast<float>(ady);
                     if (m_scrollMoveAccum >= m_moveTickDistance) {
                         m_scrollMoveAccum = 0.0f;
