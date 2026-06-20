@@ -16,7 +16,8 @@ public:
     // Local trackpad haptics. The sink fires (side, amplitude, pulse count).
     void SetHapticSink(std::function<void(uint8_t, uint16_t, uint8_t)> sink) { m_haptic = std::move(sink); }
     void SetHapticOnClick(bool enabled)    { m_hapticOnClick = enabled; }
-    void SetHapticOnMove(bool enabled)     { m_hapticOnMove  = enabled; }   // both pads, identical
+    void SetHapticOnMove(bool enabled)     { m_hapticOnMove  = enabled; }   // mouse pad (all axes)
+    void SetScrollMoveHaptic(bool enabled) { m_scrollMoveHaptic = enabled; } // scroll pad (vertical axis)
     void SetScrollStepHaptic(bool enabled) { m_scrollStepHaptic = enabled; } // notch buzz while scrolling
     void SetScrollStepInterval(int n)      { m_scrollStepInterval = n < 1 ? 1 : n; } // notches per buzz
     void SetClickHardness(int level)       { m_clickHardness = level < 1 ? 1 : (level > 3 ? 3 : level); }
@@ -68,7 +69,8 @@ private:
     // Haptics
     std::function<void(uint8_t, uint16_t, uint8_t)> m_haptic;
     bool     m_hapticOnClick    = false;
-    bool     m_hapticOnMove     = false;     // movement texture, both pads identical
+    bool     m_hapticOnMove     = false;     // mouse-pad movement texture (all axes)
+    bool     m_scrollMoveHaptic = false;     // scroll-pad movement texture (vertical only)
     bool     m_scrollStepHaptic = false;     // notch buzz per scroll step (scroll pad)
     int      m_clickHardness    = 2;         // 1=soft, 2=medium, 3=hard
     float    m_moveTickDistance = 3000.0f;   // smaller = more ticks per movement

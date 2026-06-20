@@ -148,13 +148,15 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
     // density, so left and right feel identical. Independent of the mouse /
     // scroll output toggles, so e.g. the scroll pad still buzzes per movement
     // even with the scroll wheel turned off.
-    auto moveTexture = [&](const Pad& pad, bool enabled, bool& prevTouch,
-                           int16_t& px, int16_t& py, float& accum, float tickDist, uint8_t side) {
+    auto moveTexture = [&](const Pad& pad, bool enabled, bool verticalOnly, bool& prevTouch,
+                           int16_t& px, int16_t& py, float& accum, uint8_t side) {
         if (enabled && pad.touching && prevTouch) {
             const int dx = pad.x - px < 0 ? px - pad.x : pad.x - px;
             const int dy = pad.y - py < 0 ? py - pad.y : pad.y - py;
-            accum += static_cast<float>(dx + dy);
-            if (accum >= tickDist) {
+            // Mouse counts travel in any direction; the scroll pad only counts
+            // vertical travel (that's the axis it scrolls), at the SAME density.
+            accum += static_cast<float>(verticalOnly ? dy : dx + dy);
+            if (accum >= m_moveTickDistance) {
                 accum = 0.0f;
                 fireHaptic(side, HAPTIC_MOVE);
             }
@@ -163,10 +165,6 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
         else                accum = 0.0f;
         prevTouch = pad.touching;
     };
-    // Identical movement texture on both pads (same density), so left and right
-    // mirror exactly.
-    moveTexture(mp, m_hapticOnMove, m_hpMt, m_hpMx, m_hpMy, m_moveAccum,
-                m_moveTickDistance, mousePadSide());
-    moveTexture(sp, m_hapticOnMove, m_hpSt, m_hpSx, m_hpSy, m_scrollMoveAccum,
-                m_moveTickDistance, scrollPadSide());
+    moveTexture(mp, m_hapticOnMove,     false, m_hpMt, m_hpMx, m_hpMy, m_moveAccum,       mousePadSide());
+    moveTexture(sp, m_scrollMoveHaptic, true,  m_hpSt, m_hpSx, m_hpSy, m_scrollMoveAccum, scrollPadSide());
 }

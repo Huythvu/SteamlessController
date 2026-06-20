@@ -98,7 +98,8 @@ void ControllerManager::EnableGameMode() {
         m_trackpad.SetScrollDeadzone(ScrollDzFromPos(m_scrollDeadzone));
         m_trackpad.SetHapticOnClick(m_hapticOnClick);
         m_trackpad.SetHapticOnMove(m_hapticOnMove);
-        m_trackpad.SetScrollStepHaptic(m_scrollStepHaptic);
+        m_trackpad.SetScrollMoveHaptic(m_scrollHapticMode == 1);
+        m_trackpad.SetScrollStepHaptic(m_scrollHapticMode == 2);
         m_trackpad.SetClickHardness(m_clickHardness);
         m_trackpad.SetMoveTickDistance(MoveTickFromPos(m_hapticIntensity));
         m_trackpad.SetScrollStepInterval(StepIntervalFromPos(m_scrollHapticIntensity));
@@ -154,10 +155,13 @@ void ControllerManager::SetHapticOnMove(bool enabled) {
     m_trackpad.SetHapticOnMove(enabled);
 }
 
-void ControllerManager::SetScrollStepHaptic(bool enabled) {
-    m_scrollStepHaptic = enabled;
+void ControllerManager::SetScrollHapticMode(int mode) {
+    if (mode < 0) mode = 0;
+    if (mode > 2) mode = 2;
+    m_scrollHapticMode = mode;
     std::lock_guard<std::mutex> lock(m_inputMutex);
-    m_trackpad.SetScrollStepHaptic(enabled);
+    m_trackpad.SetScrollMoveHaptic(mode == 1);
+    m_trackpad.SetScrollStepHaptic(mode == 2);
 }
 
 void ControllerManager::SetHapticIntensity(int pos) {
