@@ -77,13 +77,13 @@ public:
     // Trackpad haptic feedback (on the pad being used).
     void SetHapticOnClick(bool enabled);
     void SetHapticOnMove(bool enabled);
-    void SetScrollHapticMode(int mode);  // 0 off, 1 per scroll step, 2 per movement
-    void SetHapticIntensity(int pos);    // 1..100
-    void SetScrollHapticIntensity(int pos);  // 1..100 (scroll haptic density)
+    void SetScrollStepHaptic(bool enabled);  // notch buzz per scroll step
+    void SetHapticIntensity(int pos);    // 1..100 (movement density, both pads)
+    void SetScrollHapticIntensity(int pos);  // 1..100 (scroll-step density)
     void SetHapticClickHardness(int level);  // 1..3 (soft/medium/hard)
     bool IsHapticOnClick()    const { return m_hapticOnClick; }
     bool IsHapticOnMove()     const { return m_hapticOnMove; }
-    int  GetScrollHapticMode() const { return m_scrollHapticMode; }
+    bool IsScrollStepHaptic() const { return m_scrollStepHaptic; }
     int  GetHapticIntensity() const { return m_hapticIntensity; }
     int  GetScrollHapticIntensity() const { return m_scrollHapticIntensity; }
     int  GetHapticClickHardness() const { return m_clickHardness; }
@@ -123,9 +123,9 @@ private:
     bool                               m_autoEnable           = false;
     bool                               m_hapticOnClick        = false;
     bool                               m_hapticOnMove         = false;
-    int                                m_scrollHapticMode     = 0;    // 0 off, 1 step, 2 movement
+    bool                               m_scrollStepHaptic     = false; // notch per scroll step
     int                                m_hapticIntensity      = 50;   // 1..100 (50 = baseline)
-    int                                m_scrollHapticIntensity = 35;  // 1..100 (scroll density)
+    int                                m_scrollHapticIntensity = 50;  // 1..100 (scroll-step density)
     int                                m_clickHardness        = 2;    // 1..3 (soft/medium/hard)
     int                                m_trackpadSensitivity  = 35;   // 1..100
     int                                m_scrollSensitivity    = 30;   // 1..100

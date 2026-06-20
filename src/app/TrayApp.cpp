@@ -632,29 +632,20 @@ void TrayApp::DrawTabs() {
         }
         ImGui::EndDisabled();
 
-        toggle("Buzz on mouse movement", c.IsHapticOnMove(),
+        // Movement texture: identical on both pads, one shared intensity.
+        toggle("Buzz on movement (both pads)", c.IsHapticOnMove(),
                &ControllerManager::SetHapticOnMove);
-
-        ImGui::TextUnformatted("Scroll feedback");
-        int smode = c.GetScrollHapticMode();
-        const char* smodes[3] = { "Off", "Per scroll step", "Per movement (like mouse)" };
-        for (int m = 0; m < 3; ++m) {
-            ImGui::SameLine();
-            if (ImGui::RadioButton(smodes[m], smode == m)) {
-                c.SetScrollHapticMode(m);
-                SaveSettings();
-            }
-        }
-
         ImGui::BeginDisabled(!c.IsHapticOnMove());
-        slider("Mouse haptic intensity", c.GetHapticIntensity(), 1, 100,
+        slider("Movement intensity", c.GetHapticIntensity(), 1, 100,
                &ControllerManager::SetHapticIntensity);
         ImGui::EndDisabled();
 
-        // Scroll has its own density so it can be tamed independently (the
-        // mouse texture often feels good at a level that's too busy for scroll).
-        ImGui::BeginDisabled(c.GetScrollHapticMode() == 0);
-        slider("Scroll haptic intensity", c.GetScrollHapticIntensity(), 1, 100,
+        // Extra notch buzz layered on the scroll pad while actually scrolling,
+        // with its own intensity so the left pad can be tuned separately.
+        toggle("Buzz per scroll step (scroll pad)", c.IsScrollStepHaptic(),
+               &ControllerManager::SetScrollStepHaptic);
+        ImGui::BeginDisabled(!c.IsScrollStepHaptic());
+        slider("Scroll-step intensity", c.GetScrollHapticIntensity(), 1, 100,
                &ControllerManager::SetScrollHapticIntensity);
         ImGui::EndDisabled();
 
@@ -1147,12 +1138,13 @@ void TrayApp::LoadProfileSettings(HKEY key) {
     m_controller->SetLeftStickSensitivity (static_cast<int>(rd(L"LeftStickSens",       50)));
     m_controller->SetRightStickSensitivity(static_cast<int>(rd(L"RightStickSens",      50)));
     m_controller->SetHapticOnClick        (rb(L"HapticOnClick", false));
-    bool onMove = rb(L"HapticOnMove", false);
-    m_controller->SetHapticOnMove         (onMove);
-    // Migrate: scroll movement haptic used to ride on HapticOnMove.
-    m_controller->SetScrollHapticMode     (static_cast<int>(rd(L"ScrollHapticMode", onMove ? 2 : 0)));
+    // Migrate the old scroll-haptic mode (0 off / 1 step / 2 movement): movement
+    // is now the shared both-pads toggle, step is its own toggle.
+    int oldScrollMode = static_cast<int>(rd(L"ScrollHapticMode", 0));
+    m_controller->SetHapticOnMove         (rb(L"HapticOnMove", false) || oldScrollMode == 2);
+    m_controller->SetScrollStepHaptic     (rb(L"ScrollStepHaptic", oldScrollMode == 1));
     m_controller->SetHapticIntensity      (static_cast<int>(rd(L"HapticDensity",        50)));
-    m_controller->SetScrollHapticIntensity(static_cast<int>(rd(L"ScrollHapticDensity",   35)));
+    m_controller->SetScrollHapticIntensity(static_cast<int>(rd(L"ScrollHapticDensity",   50)));
     m_controller->SetHapticClickHardness  (static_cast<int>(rd(L"HapticClickHardness",    2)));
 
     m_controller->ResetButtonMappings();
@@ -1184,6 +1176,7 @@ void TrayApp::SaveProfileSettings(HKEY key) {
     wb(L"UseLeftTrackpad", m_controller->IsUseLeftTrackpad());
     wb(L"HapticOnClick",   m_controller->IsHapticOnClick());
     wb(L"HapticOnMove",    m_controller->IsHapticOnMove());
+    wb(L"ScrollStepHaptic", m_controller->IsScrollStepHaptic());
     wd(L"TrackpadSensitivity", static_cast<DWORD>(m_controller->GetTrackpadSensitivity()));
     wd(L"ScrollSensitivity",   static_cast<DWORD>(m_controller->GetScrollSensitivity()));
     wd(L"MouseDeadzonePos",    static_cast<DWORD>(m_controller->GetMouseDeadzone()));
@@ -1194,7 +1187,6 @@ void TrayApp::SaveProfileSettings(HKEY key) {
     wd(L"RightStickSens",      static_cast<DWORD>(m_controller->GetRightStickSensitivity()));
     wd(L"HapticDensity",       static_cast<DWORD>(m_controller->GetHapticIntensity()));
     wd(L"HapticClickHardness", static_cast<DWORD>(m_controller->GetHapticClickHardness()));
-    wd(L"ScrollHapticMode",    static_cast<DWORD>(m_controller->GetScrollHapticMode()));
     wd(L"ScrollHapticDensity", static_cast<DWORD>(m_controller->GetScrollHapticIntensity()));
 
     for (int i = 0; i < InputMapper::kSourceCount; ++i) {

@@ -109,9 +109,9 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
                     input.mi.dwFlags   = MOUSEEVENTF_WHEEL;
                     input.mi.mouseData = static_cast<DWORD>(ticks);
                     SendInput(1, &input, sizeof(INPUT));
-                    // Mode 1: buzz every N scroll steps (a notched-wheel feel;
-                    // N from the scroll haptic intensity, so it can be tamed).
-                    if (m_scrollHapticMode == 1) {
+                    // Buzz every N scroll steps (a notched-wheel feel; N from the
+                    // scroll-step intensity, so it can be tamed).
+                    if (m_scrollStepHaptic) {
                         m_scrollStepAccum += ticks < 0 ? -ticks : ticks;
                         if (m_scrollStepAccum >= m_scrollStepInterval) {
                             m_scrollStepAccum = 0;
@@ -163,8 +163,10 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
         else                accum = 0.0f;
         prevTouch = pad.touching;
     };
-    moveTexture(mp, m_hapticOnMove,          m_hpMt, m_hpMx, m_hpMy, m_moveAccum,
+    // Identical movement texture on both pads (same density), so left and right
+    // mirror exactly.
+    moveTexture(mp, m_hapticOnMove, m_hpMt, m_hpMx, m_hpMy, m_moveAccum,
                 m_moveTickDistance, mousePadSide());
-    moveTexture(sp, m_scrollHapticMode == 2, m_hpSt, m_hpSx, m_hpSy, m_scrollMoveAccum,
-                m_scrollTickDistance, scrollPadSide());
+    moveTexture(sp, m_hapticOnMove, m_hpSt, m_hpSx, m_hpSy, m_scrollMoveAccum,
+                m_moveTickDistance, scrollPadSide());
 }
