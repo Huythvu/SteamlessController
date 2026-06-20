@@ -553,8 +553,8 @@ void TrayApp::DrawTabs() {
             if (left) { t = (rep[5] & 0x02) != 0; clk = (rep[5] & 0x04) != 0; x = rd16(18); y = rd16(20); }
             else      { t = (rep[4] & 0x20) != 0; clk = (rep[4] & 0x40) != 0; x = rd16(24); y = rd16(26); }
         };
-        bool mt, mc; int16_t mx, my; parse(useLeft,  mt, mc, mx, my);
-        bool st, sc; int16_t sx, sy; parse(!useLeft, st, sc, sx, sy);
+        bool lt, lc; int16_t lx, ly; parse(true,  lt, lc, lx, ly);   // physical left pad
+        bool rt, rc; int16_t rx, ry; parse(false, rt, rc, rx, ry);   // physical right pad
 
         // Use the exact per-report movement the deadzone check sees, smoothed a
         // little so the bar isn't jittery. Crossing the red line now means the
@@ -567,11 +567,14 @@ void TrayApp::DrawTabs() {
         float mFrac = mdz > 0 ? m_tpMouseVel  / (2.0f * mdz) : (m_tpMouseVel  > 0 ? 1.0f : 0.0f);
         float sFrac = sdz > 0 ? m_tpScrollVel / (2.0f * sdz) : (m_tpScrollVel > 0 ? 1.0f : 0.0f);
 
-        DrawTrackpadView(useLeft ? "Mouse pad (left)" : "Mouse pad (right)",
-                         mt, mc, mx / 32767.0f, my / 32767.0f, mFrac);
+        // Lay the pads out as they physically sit: left pad on the left, right
+        // pad on the right. Labels show each pad's current role.
+        bool leftIsMouse = useLeft;
+        DrawTrackpadView(leftIsMouse ? "Left pad (mouse)" : "Left pad (scroll)",
+                         lt, lc, lx / 32767.0f, ly / 32767.0f, leftIsMouse ? mFrac : sFrac);
         ImGui::SameLine(0, 24);
-        DrawTrackpadView(useLeft ? "Scroll pad (right)" : "Scroll pad (left)",
-                         st, sc, sx / 32767.0f, sy / 32767.0f, sFrac);
+        DrawTrackpadView(leftIsMouse ? "Right pad (scroll)" : "Right pad (mouse)",
+                         rt, rc, rx / 32767.0f, ry / 32767.0f, leftIsMouse ? sFrac : mFrac);
         ImGui::EndTabItem();
     }
 
@@ -643,12 +646,16 @@ void TrayApp::DrawTabs() {
             }
         }
 
-        // The density slider drives both the mouse texture and the scroll
-        // "per movement" mode.
-        bool densityUsed = c.IsHapticOnMove() || c.GetScrollHapticMode() == 2;
-        ImGui::BeginDisabled(!densityUsed);
-        slider("Movement intensity (clicks per movement)", c.GetHapticIntensity(), 1, 100,
+        ImGui::BeginDisabled(!c.IsHapticOnMove());
+        slider("Mouse haptic intensity", c.GetHapticIntensity(), 1, 100,
                &ControllerManager::SetHapticIntensity);
+        ImGui::EndDisabled();
+
+        // Scroll has its own density so it can be tamed independently (the
+        // mouse texture often feels good at a level that's too busy for scroll).
+        ImGui::BeginDisabled(c.GetScrollHapticMode() == 0);
+        slider("Scroll haptic intensity", c.GetScrollHapticIntensity(), 1, 100,
+               &ControllerManager::SetScrollHapticIntensity);
         ImGui::EndDisabled();
 
         ImGui::Spacing();
@@ -1145,6 +1152,7 @@ void TrayApp::LoadProfileSettings(HKEY key) {
     // Migrate: scroll movement haptic used to ride on HapticOnMove.
     m_controller->SetScrollHapticMode     (static_cast<int>(rd(L"ScrollHapticMode", onMove ? 2 : 0)));
     m_controller->SetHapticIntensity      (static_cast<int>(rd(L"HapticDensity",        50)));
+    m_controller->SetScrollHapticIntensity(static_cast<int>(rd(L"ScrollHapticDensity",   35)));
     m_controller->SetHapticClickHardness  (static_cast<int>(rd(L"HapticClickHardness",    2)));
 
     m_controller->ResetButtonMappings();
@@ -1187,6 +1195,7 @@ void TrayApp::SaveProfileSettings(HKEY key) {
     wd(L"HapticDensity",       static_cast<DWORD>(m_controller->GetHapticIntensity()));
     wd(L"HapticClickHardness", static_cast<DWORD>(m_controller->GetHapticClickHardness()));
     wd(L"ScrollHapticMode",    static_cast<DWORD>(m_controller->GetScrollHapticMode()));
+    wd(L"ScrollHapticDensity", static_cast<DWORD>(m_controller->GetScrollHapticIntensity()));
 
     for (int i = 0; i < InputMapper::kSourceCount; ++i) {
         InputMapper::Action a = m_controller->GetButtonAction(i);

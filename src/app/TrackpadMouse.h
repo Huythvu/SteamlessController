@@ -18,6 +18,8 @@ public:
     void SetHapticOnClick(bool enabled)    { m_hapticOnClick = enabled; }
     void SetHapticOnMove(bool enabled)     { m_hapticOnMove  = enabled; }   // mouse pad
     void SetScrollHapticMode(int mode)     { m_scrollHapticMode = mode; }   // 0 off, 1 per step, 2 per movement
+    void SetScrollTickDistance(float dist) { m_scrollTickDistance = dist; } // per-movement density
+    void SetScrollStepInterval(int n)      { m_scrollStepInterval = n < 1 ? 1 : n; } // notches per buzz
     void SetClickHardness(int level)       { m_clickHardness = level < 1 ? 1 : (level > 3 ? 3 : level); }
     void SetMoveTickDistance(float dist)   { m_moveTickDistance = dist; }   // trackpad units / tick
     void SetMouseDeadzone(int dz)          { m_mouseDeadzone  = dz; }       // per-frame units
@@ -72,6 +74,9 @@ private:
     int      m_clickHardness    = 2;         // 1=soft, 2=medium, 3=hard
     float    m_moveTickDistance = 3000.0f;   // smaller = more ticks per movement
     float    m_moveAccum        = 0.0f;      // distance since last move tick
+    float    m_scrollTickDistance = 8000.0f; // separate density for scroll texture
+    int      m_scrollStepInterval = 1;       // per-step mode: notches per buzz
+    int      m_scrollStepAccum    = 0;
     int      m_mouseDeadzone    = 20;        // per-frame deadzone (units)
     int      m_scrollDeadzone   = 120;
     std::atomic<int> m_lastMouseMove{0};     // live view: latest report's movement

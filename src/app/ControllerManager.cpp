@@ -22,6 +22,13 @@ static float MoveTickFromPos(int pos) {
     return 8000.0f * std::pow(2.0f, (50 - pos) / 50.0f);
 }
 
+// Per-step scroll haptic: notches per buzz. Higher pos = denser (buzz every
+// notch), lower pos = sparser (buzz every several notches).
+static int StepIntervalFromPos(int pos) {
+    int n = (105 - pos) / 13;   // pos 100 -> 0, pos 1 -> 8
+    return n < 1 ? 1 : n;
+}
+
 // Deadzone: a 0..100 slider (raw pad units per report). 0 = off (no filtering).
 // Linear so the low end has fine control and the value is easy to read against
 // the live movement bar. Mouse runs a bit higher per step than scroll because
@@ -94,6 +101,8 @@ void ControllerManager::EnableGameMode() {
         m_trackpad.SetScrollHapticMode(m_scrollHapticMode);
         m_trackpad.SetClickHardness(m_clickHardness);
         m_trackpad.SetMoveTickDistance(MoveTickFromPos(m_hapticIntensity));
+        m_trackpad.SetScrollTickDistance(MoveTickFromPos(m_scrollHapticIntensity));
+        m_trackpad.SetScrollStepInterval(StepIntervalFromPos(m_scrollHapticIntensity));
     }
     StartReadLoop();
     m_onStateChanged(m_connected.load(), m_gameModeActive.load(), false);
@@ -160,6 +169,15 @@ void ControllerManager::SetHapticIntensity(int pos) {
     m_hapticIntensity = pos;
     std::lock_guard<std::mutex> lock(m_inputMutex);
     m_trackpad.SetMoveTickDistance(MoveTickFromPos(pos));
+}
+
+void ControllerManager::SetScrollHapticIntensity(int pos) {
+    if (pos < 1)   pos = 1;
+    if (pos > 100) pos = 100;
+    m_scrollHapticIntensity = pos;
+    std::lock_guard<std::mutex> lock(m_inputMutex);
+    m_trackpad.SetScrollTickDistance(MoveTickFromPos(pos));
+    m_trackpad.SetScrollStepInterval(StepIntervalFromPos(pos));
 }
 
 void ControllerManager::SetHapticClickHardness(int level) {
