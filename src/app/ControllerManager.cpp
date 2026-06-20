@@ -22,9 +22,13 @@ static float MoveTickFromPos(int pos) {
     return 8000.0f * std::pow(2.0f, (50 - pos) / 50.0f);
 }
 
-// Deadzone: a 1..100 slider where 50 = baseline, 100 = 2x, 1 ~= 0.5x.
+// Deadzone: a 1..100 slider where 50 = baseline, 100 = 2x, 1 ~= 0.5x. The old
+// mouse baseline of 120 was far too small to reject a resting thumb (even at
+// max it barely filtered). Scroll (~600) works well, so the mouse is brought
+// onto a comparable scale -- a bit higher, since the mouse check sums both
+// axes (adx+ady) and so needs more threshold for the same rejection.
 static int MouseDzFromPos(int pos) {
-    return static_cast<int>(120.0f * std::pow(2.0f, (pos - 50) / 50.0f));
+    return static_cast<int>(800.0f * std::pow(2.0f, (pos - 50) / 50.0f));
 }
 static int ScrollDzFromPos(int pos) {
     return static_cast<int>(600.0f * std::pow(2.0f, (pos - 50) / 50.0f));
