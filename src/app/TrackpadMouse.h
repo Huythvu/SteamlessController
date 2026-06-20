@@ -57,6 +57,10 @@ private:
     // Click haptic edge state
     bool     m_prevClick  = false;
 
+    // Movement-texture haptic state (per pad, independent of mouse/scroll output)
+    int16_t  m_hpMx = 0, m_hpMy = 0; bool m_hpMt = false;   // mouse pad
+    int16_t  m_hpSx = 0, m_hpSy = 0; bool m_hpSt = false;   // scroll pad
+
     float    m_sensitivity       = 0.015f;
     float    m_scrollSensitivity = 0.06f;
 

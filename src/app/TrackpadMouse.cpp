@@ -39,6 +39,7 @@ void TrackpadMouse::Reset() {
     m_scrollAccum    = 0.0f;
     m_scrollMoveAccum = 0.0f;
     m_moveAccum      = 0.0f;
+    m_hpMt = m_hpSt  = false;
     m_lastMouseMove.store(0);
     m_lastScrollMove.store(0);
 }
@@ -78,20 +79,11 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
                     input.mi.dy      = idy;
                     SendInput(1, &input, sizeof(INPUT));
                 }
-
-                // Textured "tick" feedback as the cursor moves across the pad.
-                if (m_hapticOnMove) {
-                    m_moveAccum += static_cast<float>(adx + ady);
-                    if (m_moveAccum >= m_moveTickDistance) {
-                        m_moveAccum = 0.0f;
-                        fireHaptic(mousePadSide(), HAPTIC_MOVE);
-                    }
-                }
             }
         }
 
         if (pad.touching) { m_prevX = pad.x; m_prevY = pad.y; }
-        else { m_accumX = m_accumY = 0.0f; m_moveAccum = 0.0f; m_lastMouseMove.store(0); }
+        else { m_accumX = m_accumY = 0.0f; m_lastMouseMove.store(0); }
         m_touching = pad.touching;
     }
 
@@ -120,16 +112,6 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
                     if (m_scrollHapticMode == 1)
                         fireHaptic(scrollPadSide(), HAPTIC_MOVE);
                 }
-
-                // Mode 2: distance-based texture as the finger travels, exactly
-                // like the mouse-movement haptic (shares the same density).
-                if (m_scrollHapticMode == 2) {
-                    m_scrollMoveAccum += static_cast<float>(ady);
-                    if (m_scrollMoveAccum >= m_moveTickDistance) {
-                        m_scrollMoveAccum = 0.0f;
-                        fireHaptic(scrollPadSide(), HAPTIC_MOVE);
-                    }
-                }
             }
         }
 
@@ -138,20 +120,42 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
         m_scrollTouching = pad.touching;
     }
 
+    const Pad mp = ReadPad(buf, mouseLeft);
+    const Pad sp = ReadPad(buf, scrollLeft);
+
     // --- Click haptics ---
     // Fire whenever a pad is hard-pressed, independent of whether the mouse or
     // scroll features are enabled (the click itself is a remappable button now,
     // so it can have a function regardless). Two-way: on press and release.
-    {
-        const Pad mp = ReadPad(buf, mouseLeft);
-        if (mp.clicking != m_prevClick) {
-            if (m_hapticOnClick) fireClick(mousePadSide());
-            m_prevClick = mp.clicking;
-        }
-        const Pad sp = ReadPad(buf, scrollLeft);
-        if (sp.clicking != m_scrollPrevClick) {
-            if (m_hapticOnClick) fireClick(scrollPadSide());
-            m_scrollPrevClick = sp.clicking;
-        }
+    if (mp.clicking != m_prevClick) {
+        if (m_hapticOnClick) fireClick(mousePadSide());
+        m_prevClick = mp.clicking;
     }
+    if (sp.clicking != m_scrollPrevClick) {
+        if (m_hapticOnClick) fireClick(scrollPadSide());
+        m_scrollPrevClick = sp.clicking;
+    }
+
+    // --- Movement-texture haptics ---
+    // Both pads use the SAME metric (total 2D finger travel) and the same
+    // density, so left and right feel identical. Independent of the mouse /
+    // scroll output toggles, so e.g. the scroll pad still buzzes per movement
+    // even with the scroll wheel turned off.
+    auto moveTexture = [&](const Pad& pad, bool enabled, bool& prevTouch,
+                           int16_t& px, int16_t& py, float& accum, uint8_t side) {
+        if (enabled && pad.touching && prevTouch) {
+            const int dx = pad.x - px < 0 ? px - pad.x : pad.x - px;
+            const int dy = pad.y - py < 0 ? py - pad.y : pad.y - py;
+            accum += static_cast<float>(dx + dy);
+            if (accum >= m_moveTickDistance) {
+                accum = 0.0f;
+                fireHaptic(side, HAPTIC_MOVE);
+            }
+        }
+        if (pad.touching) { px = pad.x; py = pad.y; }
+        else                accum = 0.0f;
+        prevTouch = pad.touching;
+    };
+    moveTexture(mp, m_hapticOnMove,          m_hpMt, m_hpMx, m_hpMy, m_moveAccum,       mousePadSide());
+    moveTexture(sp, m_scrollHapticMode == 2, m_hpSt, m_hpSx, m_hpSy, m_scrollMoveAccum, scrollPadSide());
 }
