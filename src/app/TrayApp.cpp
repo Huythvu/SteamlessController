@@ -635,13 +635,12 @@ void TrayApp::DrawControllerTab() {
     ImGui::SameLine(0, 16);
     if (m_recordIndex >= 0)
         ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.20f, 1.0f),
-            "Binding \"%s\": press a key or pick a gamepad button (Esc cancel)",
+            "Press a key for \"%s\"   (Esc cancel, Del clear)",
             Narrow(InputMapper::kSources[m_recordIndex].name).c_str());
     else
-        ImGui::TextDisabled("Click a button to remap it. Right-click a button = reset to default.");
+        ImGui::TextDisabled("Click a button then press a key. Right-click a button = reset to default.");
     ImGui::Spacing();
 
-    bool armOpen = false;                 // a button was just clicked to remap
     const float S = 1.2f;                 // scale the original pixel layout
     const float baseW = 506.0f, baseH = 600.0f;
     const float canvasW = baseW * S, canvasH = baseH * S;
@@ -675,7 +674,7 @@ void TrayApp::DrawControllerTab() {
                                ImVec2(w * S, h * S),
                                ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
         bool hov = ImGui::IsItemHovered();
-        if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) { m_recordIndex = idx; armOpen = true; }
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Left))  m_recordIndex = idx;
         if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
             m_controller->SetButtonAction(idx, InputMapper::kSources[idx].def);
             SaveSettings();
@@ -807,7 +806,7 @@ void TrayApp::DrawControllerTab() {
                       Narrow(InputMapper::kSources[i].name).c_str(),
                       ActionLabel(m_controller->GetButtonAction(i)).c_str(), i);
         if (pressed) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.35f, 0.85f, 0.45f, 1.0f));
-        if (ImGui::Selectable(row, rec)) { m_recordIndex = i; armOpen = true; }
+        if (ImGui::Selectable(row, rec)) m_recordIndex = i;
         if (pressed) ImGui::PopStyleColor();
         if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
             m_controller->SetButtonAction(i, InputMapper::kSources[i].def);
@@ -816,38 +815,6 @@ void TrayApp::DrawControllerTab() {
         }
     }
     ImGui::EndChild();
-
-    // Remap popup: keyboard binding happens by pressing a key (handled in the
-    // window proc); this popup adds gamepad-button targets and None/Default.
-    if (armOpen) ImGui::OpenPopup("remap");
-    if (ImGui::BeginPopup("remap")) {
-        if (m_recordIndex < 0) {
-            ImGui::CloseCurrentPopup();
-        } else {
-            int idx = m_recordIndex;
-            ImGui::TextUnformatted(Narrow(InputMapper::kSources[idx].name).c_str());
-            ImGui::TextDisabled("Press a key, or pick a gamepad button:");
-            ImGui::Separator();
-            auto assign = [&](InputMapper::Action a) {
-                m_controller->SetButtonAction(idx, a);
-                SaveSettings();
-                m_recordIndex = -1;
-                ImGui::CloseCurrentPopup();
-            };
-            for (int i = 0; i < InputMapper::kXboxTargetCount; ++i) {
-                const InputMapper::Target& t = InputMapper::kXboxTargets[i];
-                if (i % 3 != 0) ImGui::SameLine();
-                if (ImGui::Button((Narrow(t.name) + "##xb" + std::to_string(i)).c_str(),
-                                  ImVec2(150, 0)))
-                    assign({ t.type, t.value });
-            }
-            ImGui::Separator();
-            if (ImGui::Button("None"))    assign({ InputMapper::Type::None, 0 });
-            ImGui::SameLine();
-            if (ImGui::Button("Default")) assign(InputMapper::kSources[idx].def);
-        }
-        ImGui::EndPopup();
-    }
 }
 
 // A square stick view: outer bounds, the circular deadzone ring, and a dot
