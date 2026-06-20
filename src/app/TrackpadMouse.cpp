@@ -93,14 +93,6 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
         if (pad.touching) { m_prevX = pad.x; m_prevY = pad.y; }
         else { m_accumX = m_accumY = 0.0f; m_moveAccum = 0.0f; m_lastMouseMove.store(0); }
         m_touching = pad.touching;
-
-        if (pad.clicking != m_prevClick) {
-            // The click output itself is produced by InputMapper (remappable);
-            // here we only add the local two-way click haptic.
-            if (m_hapticOnClick)
-                fireClick(mousePadSide());
-            m_prevClick = pad.clicking;
-        }
     }
 
     // --- Trackpad scroll wheel (vertical) ---
@@ -141,13 +133,22 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
         if (pad.touching) m_scrollPrevY = pad.y;
         else { m_scrollAccum = 0.0f; m_lastScrollMove.store(0); }
         m_scrollTouching = pad.touching;
+    }
 
-        // Scroll-pad click (middle-click by default) is produced by InputMapper;
-        // here we only add the local click haptic.
-        if (pad.clicking != m_scrollPrevClick) {
-            if (m_hapticOnClick)
-                fireClick(scrollPadSide());
-            m_scrollPrevClick = pad.clicking;
+    // --- Click haptics ---
+    // Fire whenever a pad is hard-pressed, independent of whether the mouse or
+    // scroll features are enabled (the click itself is a remappable button now,
+    // so it can have a function regardless). Two-way: on press and release.
+    {
+        const Pad mp = ReadPad(buf, mouseLeft);
+        if (mp.clicking != m_prevClick) {
+            if (m_hapticOnClick) fireClick(mousePadSide());
+            m_prevClick = mp.clicking;
+        }
+        const Pad sp = ReadPad(buf, scrollLeft);
+        if (sp.clicking != m_scrollPrevClick) {
+            if (m_hapticOnClick) fireClick(scrollPadSide());
+            m_scrollPrevClick = sp.clicking;
         }
     }
 }
