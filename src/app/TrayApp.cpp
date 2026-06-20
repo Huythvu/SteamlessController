@@ -283,11 +283,11 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         uint16_t mb = 0;
         // Left-click only binds over empty space; over a UI item it re-arms /
         // resets as usual (so you can pick a different button while armed).
-        if      (msg == WM_LBUTTONDOWN) { if (!ImGui::IsAnyItemHovered()) mb = InputMapper::MB_LEFT; }
-        else if (msg == WM_RBUTTONDOWN) mb = InputMapper::MB_RIGHT;
-        else if (msg == WM_MBUTTONDOWN) mb = InputMapper::MB_MIDDLE;
+        if      (msg == WM_LBUTTONDOWN) { if (!ImGui::IsAnyItemHovered()) mb = InputMapper::MBTN_LEFT; }
+        else if (msg == WM_RBUTTONDOWN) mb = InputMapper::MBTN_RIGHT;
+        else if (msg == WM_MBUTTONDOWN) mb = InputMapper::MBTN_MIDDLE;
         else if (msg == WM_XBUTTONDOWN)
-            mb = (HIWORD(wp) == XBUTTON1) ? InputMapper::MB_X1 : InputMapper::MB_X2;
+            mb = (HIWORD(wp) == XBUTTON1) ? InputMapper::MBTN_X1 : InputMapper::MBTN_X2;
         if (mb) {
             int idx = m_recordIndex;
             m_recordIndex = -1;
@@ -667,12 +667,12 @@ static std::string ActionLabel(InputMapper::Action a) {
     if (a.type == InputMapper::Type::None) return "-";
     if (a.type == InputMapper::Type::Mouse) {
         switch (a.value) {
-            case InputMapper::MB_LEFT:   return "Mouse Left";
-            case InputMapper::MB_RIGHT:  return "Mouse Right";
-            case InputMapper::MB_MIDDLE: return "Mouse Middle";
-            case InputMapper::MB_X1:     return "Mouse X1";
-            case InputMapper::MB_X2:     return "Mouse X2";
-            default:                     return "Mouse?";
+            case InputMapper::MBTN_LEFT:   return "Mouse Left";
+            case InputMapper::MBTN_RIGHT:  return "Mouse Right";
+            case InputMapper::MBTN_MIDDLE: return "Mouse Middle";
+            case InputMapper::MBTN_X1:     return "Mouse X1";
+            case InputMapper::MBTN_X2:     return "Mouse X2";
+            default:                       return "Mouse?";
         }
     }
     const InputMapper::Target* t = nullptr; int cnt = 0;

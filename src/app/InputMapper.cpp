@@ -40,8 +40,8 @@ const InputMapper::Source InputMapper::kSources[InputMapper::kSourceCount] = {
     { L"R5 Paddle",    3, 0x01, NONE },
     // Trackpad hard-presses. Defaults match the old behaviour: the mouse pad
     // (right by default) clicks left, the scroll pad (left) clicks middle.
-    { L"Right Pad Click", 4, 0x40, MO(InputMapper::MB_LEFT) },
-    { L"Left Pad Click",  5, 0x04, MO(InputMapper::MB_MIDDLE) },
+    { L"Right Pad Click", 4, 0x40, MO(InputMapper::MBTN_LEFT) },
+    { L"Left Pad Click",  5, 0x04, MO(InputMapper::MBTN_MIDDLE) },
 };
 
 const InputMapper::Target InputMapper::kXboxTargets[] = {
@@ -111,11 +111,11 @@ static void SendMouse(uint16_t btn, bool down) {
     INPUT in{};
     in.type = INPUT_MOUSE;
     switch (btn) {
-        case InputMapper::MB_LEFT:   in.mi.dwFlags = down ? MOUSEEVENTF_LEFTDOWN   : MOUSEEVENTF_LEFTUP;   break;
-        case InputMapper::MB_RIGHT:  in.mi.dwFlags = down ? MOUSEEVENTF_RIGHTDOWN  : MOUSEEVENTF_RIGHTUP;  break;
-        case InputMapper::MB_MIDDLE: in.mi.dwFlags = down ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_MIDDLEUP; break;
-        case InputMapper::MB_X1:     in.mi.dwFlags = down ? MOUSEEVENTF_XDOWN : MOUSEEVENTF_XUP; in.mi.mouseData = XBUTTON1; break;
-        case InputMapper::MB_X2:     in.mi.dwFlags = down ? MOUSEEVENTF_XDOWN : MOUSEEVENTF_XUP; in.mi.mouseData = XBUTTON2; break;
+        case InputMapper::MBTN_LEFT:   in.mi.dwFlags = down ? MOUSEEVENTF_LEFTDOWN   : MOUSEEVENTF_LEFTUP;   break;
+        case InputMapper::MBTN_RIGHT:  in.mi.dwFlags = down ? MOUSEEVENTF_RIGHTDOWN  : MOUSEEVENTF_RIGHTUP;  break;
+        case InputMapper::MBTN_MIDDLE: in.mi.dwFlags = down ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_MIDDLEUP; break;
+        case InputMapper::MBTN_X1:     in.mi.dwFlags = down ? MOUSEEVENTF_XDOWN : MOUSEEVENTF_XUP; in.mi.mouseData = XBUTTON1; break;
+        case InputMapper::MBTN_X2:     in.mi.dwFlags = down ? MOUSEEVENTF_XDOWN : MOUSEEVENTF_XUP; in.mi.mouseData = XBUTTON2; break;
         default: return;
     }
     SendInput(1, &in, sizeof(INPUT));

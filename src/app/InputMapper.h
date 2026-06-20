@@ -17,8 +17,9 @@ public:
     // A selectable target for the remap UI.
     struct Target { const wchar_t* name; Type type; uint16_t value; };
 
-    // Mouse-button values used by Type::Mouse actions.
-    enum : uint16_t { MB_LEFT = 1, MB_RIGHT = 2, MB_MIDDLE = 3, MB_X1 = 4, MB_X2 = 5 };
+    // Mouse-button values used by Type::Mouse actions. (Note: avoid the MB_
+    // prefix -- MB_RIGHT etc. are Windows MessageBox macros.)
+    enum : uint16_t { MBTN_LEFT = 1, MBTN_RIGHT = 2, MBTN_MIDDLE = 3, MBTN_X1 = 4, MBTN_X2 = 5 };
 
     static constexpr int kSourceCount = 21;
     static const Source  kSources[kSourceCount];
