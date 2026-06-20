@@ -627,6 +627,23 @@ void TrayApp::DrawControllerTab() {
     uint8_t rep[64];
     size_t n = m_controller->GetLatestReport(rep, sizeof(rep));
 
+    // While a button is armed, a physical gamepad press also binds it -- to the
+    // pressed button's DEFAULT action (from the factory layout), not its current
+    // mapping. That way re-pressing a remapped button still resolves to what it
+    // physically is (e.g. pressing A always means "A"), so A->B is reversible.
+    if (m_recordIndex >= 0 && n >= 30) {
+        for (int j = 0; j < InputMapper::kSourceCount; ++j) {
+            const InputMapper::Source& s = InputMapper::kSources[j];
+            if (s.def.type == InputMapper::Type::None) continue;   // skip paddles
+            if (n > s.byteIndex && (rep[s.byteIndex] & s.mask) != 0) {
+                m_controller->SetButtonAction(m_recordIndex, s.def);
+                SaveSettings();
+                m_recordIndex = -1;
+                break;
+            }
+        }
+    }
+
     if (ImGui::Button("Reset all mappings")) {
         m_controller->ResetButtonMappings();
         SaveSettings();
@@ -635,10 +652,10 @@ void TrayApp::DrawControllerTab() {
     ImGui::SameLine(0, 16);
     if (m_recordIndex >= 0)
         ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.20f, 1.0f),
-            "Press a key for \"%s\"   (Esc cancel, Del clear)",
+            "Press a key or gamepad button for \"%s\"   (Esc cancel, Del clear)",
             Narrow(InputMapper::kSources[m_recordIndex].name).c_str());
     else
-        ImGui::TextDisabled("Click a button then press a key. Right-click a button = reset to default.");
+        ImGui::TextDisabled("Click a button then press a key or gamepad button. Right-click = reset to default.");
     ImGui::Spacing();
 
     const float S = 1.2f;                 // scale the original pixel layout
