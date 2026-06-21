@@ -543,9 +543,14 @@ void TrayApp::DrawTabs() {
         ImGui::BeginDisabled(!c.IsScrollWheelEnabled());
         toggle("Invert scroll direction", c.IsInvertScroll(),
                &ControllerManager::SetInvertScroll);
+        // Smart scroll: accumulate movement so slow strokes scroll; the deadzone
+        // below becomes a low jitter floor (set it LOW with this on).
+        toggle("Smart scroll (slow strokes still scroll)", c.IsSmartScroll(),
+               &ControllerManager::SetSmartScroll);
         slider("Scroll sensitivity", c.GetScrollSensitivity(), 1, 100,
                &ControllerManager::SetScrollSensitivity);
-        slider("Scroll deadzone (0 = off)", c.GetScrollDeadzone(), 0, 100,
+        slider(c.IsSmartScroll() ? "Scroll jitter floor (set low)" : "Scroll deadzone (0 = off)",
+               c.GetScrollDeadzone(), 0, 100,
                &ControllerManager::SetScrollDeadzone);
         ImGui::EndDisabled();
 
@@ -1131,6 +1136,7 @@ void TrayApp::LoadProfileSettings(HKEY key) {
     m_controller->SetTrackpadMouseEnabled(rb(L"TrackpadMouse",   false));
     m_controller->SetScrollWheelEnabled  (rb(L"ScrollWheel",     false));
     m_controller->SetInvertScroll        (rb(L"InvertScroll",    false));
+    m_controller->SetSmartScroll         (rb(L"SmartScroll",     false));
     m_controller->SetUseLeftTrackpad     (rb(L"UseLeftTrackpad", false));
     m_controller->SetTrackpadSensitivity (static_cast<int>(rd(L"TrackpadSensitivity", 35)));
     m_controller->SetScrollSensitivity   (static_cast<int>(rd(L"ScrollSensitivity",   30)));
@@ -1175,6 +1181,7 @@ void TrayApp::SaveProfileSettings(HKEY key) {
     wb(L"TrackpadMouse",   m_controller->IsTrackpadMouseEnabled());
     wb(L"ScrollWheel",     m_controller->IsScrollWheelEnabled());
     wb(L"InvertScroll",    m_controller->IsInvertScroll());
+    wb(L"SmartScroll",     m_controller->IsSmartScroll());
     wb(L"UseLeftTrackpad", m_controller->IsUseLeftTrackpad());
     wb(L"HapticOnClick",   m_controller->IsHapticOnClick());
     wb(L"HapticOnMove",    m_controller->IsHapticOnMove());

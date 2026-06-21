@@ -129,33 +129,44 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
             const int adx   = rawdx < 0 ? -rawdx : rawdx;
             m_lastScrollMove.store(ady + adx);   // publish for the live view
 
-            // Vertical wheel. Deadzone ignores tiny movement (resting thumb).
-            if (ady > m_scrollDeadzone) {
-                // Natural direction: finger up scrolls up. Invert flips it.
-                const float dir    = m_invertScroll ? -1.0f : 1.0f;
-                const float fdelta = dir * rawdy * m_scrollSensitivity + m_scrollAccum;
-                const int   ticks  = static_cast<int>(fdelta);
-                m_scrollAccum = fdelta - ticks;
-                if (ticks != 0) {
-                    INPUT input{};
-                    input.type         = INPUT_MOUSE;
-                    input.mi.dwFlags   = MOUSEEVENTF_WHEEL;
-                    input.mi.mouseData = static_cast<DWORD>(ticks);
-                    SendInput(1, &input, sizeof(INPUT));
-                }
-            }
+            auto sendWheel = [](DWORD flag, int ticks) {
+                INPUT input{};
+                input.type         = INPUT_MOUSE;
+                input.mi.dwFlags   = flag;
+                input.mi.mouseData = static_cast<DWORD>(ticks);
+                SendInput(1, &input, sizeof(INPUT));
+            };
 
-            // Horizontal wheel. Finger right scrolls right (natural swipe).
-            if (adx > m_scrollDeadzone) {
-                const float fdelta = rawdx * m_scrollSensitivity + m_scrollAccumX;
-                const int   ticks  = static_cast<int>(fdelta);
-                m_scrollAccumX = fdelta - ticks;
-                if (ticks != 0) {
-                    INPUT input{};
-                    input.type         = INPUT_MOUSE;
-                    input.mi.dwFlags   = MOUSEEVENTF_HWHEEL;
-                    input.mi.mouseData = static_cast<DWORD>(ticks);
-                    SendInput(1, &input, sizeof(INPUT));
+            if (m_smartScroll) {
+                // Accumulate movement so slow strokes still scroll. Reject
+                // jitter: bleed off progress below the noise floor, and reset on
+                // a direction reversal (random back-and-forth never builds up).
+                auto axis = [&](int rawd, int ad, float dirSign, float& accum, DWORD flag) {
+                    if (ad <= m_scrollDeadzone) { accum *= 0.6f; return; }   // noise floor
+                    const float v = dirSign * static_cast<float>(rawd) * m_scrollSensitivity;
+                    if ((v < 0.0f) != (accum < 0.0f) && accum != 0.0f) accum = 0.0f;
+                    accum += v;
+                    const int ticks = static_cast<int>(accum);
+                    accum -= ticks;
+                    if (ticks != 0) sendWheel(flag, ticks);
+                };
+                axis(rawdy, ady, m_invertScroll ? -1.0f : 1.0f, m_scrollAccum,  MOUSEEVENTF_WHEEL);
+                axis(rawdx, adx, 1.0f,                          m_scrollAccumX, MOUSEEVENTF_HWHEEL);
+            } else {
+                // Vertical wheel. Per-frame deadzone ignores slow/tiny movement.
+                if (ady > m_scrollDeadzone) {
+                    const float dir    = m_invertScroll ? -1.0f : 1.0f;
+                    const float fdelta = dir * rawdy * m_scrollSensitivity + m_scrollAccum;
+                    const int   ticks  = static_cast<int>(fdelta);
+                    m_scrollAccum = fdelta - ticks;
+                    if (ticks != 0) sendWheel(MOUSEEVENTF_WHEEL, ticks);
+                }
+                // Horizontal wheel. Finger right scrolls right (natural swipe).
+                if (adx > m_scrollDeadzone) {
+                    const float fdelta = rawdx * m_scrollSensitivity + m_scrollAccumX;
+                    const int   ticks  = static_cast<int>(fdelta);
+                    m_scrollAccumX = fdelta - ticks;
+                    if (ticks != 0) sendWheel(MOUSEEVENTF_HWHEEL, ticks);
                 }
             }
         }

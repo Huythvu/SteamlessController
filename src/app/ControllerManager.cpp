@@ -90,6 +90,7 @@ void ControllerManager::EnableGameMode() {
         m_trackpad.SetUseLeftTrackpad(m_useLeftTrackpad);
         m_trackpad.SetScrollEnabled(m_scrollWheelEnabled && !susp);
         m_trackpad.SetInvertScroll(m_invertScroll);
+        m_trackpad.SetSmartScroll(m_smartScroll);
         m_trackpad.SetSensitivity(MouseSensFromPos(m_trackpadSensitivity));
         m_trackpad.SetScrollSensitivity(ScrollSensFromPos(m_scrollSensitivity));
         m_trackpad.SetMouseDeadzone(MouseDzFromPos(m_mouseDeadzone));
@@ -192,6 +193,12 @@ void ControllerManager::SetInvertScroll(bool enabled) {
     m_invertScroll = enabled;
     std::lock_guard<std::mutex> lock(m_inputMutex);
     m_trackpad.SetInvertScroll(enabled);
+}
+
+void ControllerManager::SetSmartScroll(bool enabled) {
+    m_smartScroll = enabled;
+    std::lock_guard<std::mutex> lock(m_inputMutex);
+    m_trackpad.SetSmartScroll(enabled);
 }
 
 void ControllerManager::SetTrackpadSensitivity(int pos) {

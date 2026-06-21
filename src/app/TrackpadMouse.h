@@ -12,6 +12,7 @@ public:
     void SetInvertScroll(bool enabled)           { m_invertScroll       = enabled; }
     void SetSensitivity(float sensitivity)       { m_sensitivity        = sensitivity; }
     void SetScrollSensitivity(float sensitivity) { m_scrollSensitivity  = sensitivity; }
+    void SetSmartScroll(bool enabled)            { m_smartScroll        = enabled; }
 
     // Smart deadzone: anti-jitter radial deadzone -> soft response curve ->
     // acceleration -> smoothing, for a gliding feel instead of a hard cutoff.
@@ -45,6 +46,7 @@ private:
     bool     m_useLeftTrackpad    = false;
     bool     m_scrollEnabled      = false;
     bool     m_invertScroll       = false;
+    bool     m_smartScroll        = false;
 
     // Mouse-movement state
     bool     m_touching   = false;

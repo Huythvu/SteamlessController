@@ -38,6 +38,7 @@ public:
     void SetUseLeftTrackpad(bool enabled);
     void SetScrollWheelEnabled(bool enabled);
     void SetInvertScroll(bool enabled);
+    void SetSmartScroll(bool enabled);
     void SetTrackpadSensitivity(int pos);   // 1..100
     void SetScrollSensitivity(int pos);     // 1..100
     void SetMouseDeadzone(int pos);         // 1..100 (50 = baseline)
@@ -60,6 +61,7 @@ public:
     bool IsUseLeftTrackpad()       const { return m_useLeftTrackpad; }
     bool IsScrollWheelEnabled()    const { return m_scrollWheelEnabled; }
     bool IsInvertScroll()          const { return m_invertScroll; }
+    bool IsSmartScroll()           const { return m_smartScroll; }
     int  GetTrackpadSensitivity()  const { return m_trackpadSensitivity; }
     int  GetScrollSensitivity()    const { return m_scrollSensitivity; }
     int  GetMouseDeadzone()        const { return m_mouseDeadzone; }
@@ -125,6 +127,7 @@ private:
     bool                               m_useLeftTrackpad      = false;
     bool                               m_scrollWheelEnabled   = false;
     bool                               m_invertScroll         = false;
+    bool                               m_smartScroll          = false;
     std::atomic<bool>                  m_trackpadSuspended{false};
     bool                               m_autoEnable           = false;
     bool                               m_hapticOnClick        = false;
