@@ -15,10 +15,11 @@ public:
     void Hide();
     bool IsVisible() const { return m_visible; }
 
-    // Highlight the key under a normalized pad position (0..1, top-left origin).
-    void SetPointer(float nx, float ny);
-    // Type the highlighted key into the focused application.
-    void Commit();
+    // Each trackpad drives its own half: side 0 = left pad -> left half of the
+    // keyboard, side 1 = right pad -> right half. Each has its own pointer.
+    void SetPointer(int side, float nx, float ny);
+    // Type the highlighted key for one side into the focused application.
+    void Commit(int side);
     HWND Hwnd() const { return m_hwnd; }
 
 private:
@@ -27,12 +28,14 @@ private:
     static LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
     void BuildLayout();
     void Paint(HDC hdc);
+    int  HitAt(float gridX, float ny) const;
     static void TypeKey(const Key& k);
 
     HINSTANCE         m_hinst   = nullptr;
     HWND              m_hwnd    = nullptr;
     bool              m_visible = false;
-    int               m_sel     = -1;
+    int               m_selL    = -1;   // left pad's highlighted key
+    int               m_selR    = -1;   // right pad's highlighted key
     int               m_w       = 820;
     int               m_h       = 320;
     std::vector<Key>  m_keys;

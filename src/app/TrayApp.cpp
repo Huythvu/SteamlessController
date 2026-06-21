@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <utility>
 
 #ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
@@ -379,7 +380,7 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         } else {
             m_keyboard.Show();
             m_controller->SetKeyboardMode(true);
-            m_kbPrevClick = false;
+            m_kbPrevClickL = m_kbPrevClickR = m_kbPrevBtn = false;
             SetTimer(m_hwnd, KB_TIMER, 16, nullptr);   // ~60 Hz poll
         }
         return 0;
@@ -681,6 +682,26 @@ void TrayApp::DrawTabs() {
         bool startup = IsStartupEnabled();
         if (ImGui::Checkbox("Start with Windows", &startup))
             SetStartupEnabled(startup);
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::TextDisabled("ON-SCREEN KEYBOARD (Steam + X)");
+        // Optional extra button that also types the highlighted key(s).
+        int kbBtn = c.GetKbClickButton();
+        std::string kbPreview = kbBtn < 0 ? "None (pad press only)"
+                                          : Narrow(InputMapper::kSources[kbBtn].name);
+        ImGui::SetNextItemWidth(220);
+        if (ImGui::BeginCombo("Extra type button", kbPreview.c_str())) {
+            if (ImGui::Selectable("None (pad press only)", kbBtn < 0)) {
+                c.SetKbClickButton(-1); SaveSettings();
+            }
+            for (int i = 0; i < InputMapper::kSourceCount; ++i) {
+                if (ImGui::Selectable(Narrow(InputMapper::kSources[i].name).c_str(), kbBtn == i)) {
+                    c.SetKbClickButton(i); SaveSettings();
+                }
+            }
+            ImGui::EndCombo();
+        }
 
         ImGui::Spacing();
         ImGui::Separator();
@@ -1094,29 +1115,48 @@ void TrayApp::ShowContextMenu() {
     DestroyMenu(menu);
 }
 
-// Drive the on-screen keyboard from the right trackpad: touch position aims at a
-// key, a hard click types it. Runs on the UI thread (KB_TIMER) so all the GDI
-// and SendInput work happens off the read thread.
+// Drive the on-screen keyboard from BOTH trackpads (each aims at its half), with
+// an optional extra "type" button. Runs on the UI thread (KB_TIMER) so all the
+// GDI/SendInput work happens off the read thread. side: 0 = right, 1 = left
+// (matches the haptic actuator numbering).
 void TrayApp::PollKeyboard() {
     if (!m_keyboard.IsVisible()) return;
     uint8_t rep[64];
     size_t n = m_controller->GetLatestReport(rep, sizeof(rep));
     if (n < 30) return;
 
-    const bool touch = (rep[4] & 0x20) != 0;   // right pad active
-    const bool click = (rep[4] & 0x40) != 0;   // right pad hard press
-    if (touch) {
+    auto pad = [&](int xi, int yi) {
         int16_t x, y;
-        std::memcpy(&x, rep + 24, 2);
-        std::memcpy(&y, rep + 26, 2);
-        float nx = (static_cast<float>(x) + 32767.0f) / 65534.0f;       // left->0, right->1
-        float ny = (32767.0f - static_cast<float>(y)) / 65534.0f;       // top->0, bottom->1
-        nx = nx < 0 ? 0 : (nx > 1 ? 1 : nx);
-        ny = ny < 0 ? 0 : (ny > 1 ? 1 : ny);
-        m_keyboard.SetPointer(nx, ny);
+        std::memcpy(&x, rep + xi, 2);
+        std::memcpy(&y, rep + yi, 2);
+        float nx = (static_cast<float>(x) + 32767.0f) / 65534.0f;   // left->0, right->1
+        float ny = (32767.0f - static_cast<float>(y)) / 65534.0f;   // top->0, bottom->1
+        return std::pair<float, float>(nx, ny);
+    };
+
+    const bool lTouch = (rep[5] & 0x02) != 0, lClick = (rep[5] & 0x04) != 0;  // left pad
+    const bool rTouch = (rep[4] & 0x20) != 0, rClick = (rep[4] & 0x40) != 0;  // right pad
+    if (lTouch) { auto p = pad(18, 20); m_keyboard.SetPointer(0, p.first, p.second); }
+    if (rTouch) { auto p = pad(24, 26); m_keyboard.SetPointer(1, p.first, p.second); }
+
+    // A configurable button (optional) types whichever pad(s) you're touching.
+    bool btn = false;
+    int  kbBtn = m_controller->GetKbClickButton();
+    if (kbBtn >= 0 && kbBtn < InputMapper::kSourceCount) {
+        const InputMapper::Source& s = InputMapper::kSources[kbBtn];
+        btn = n > s.byteIndex && (rep[s.byteIndex] & s.mask) != 0;
     }
-    if (click && !m_kbPrevClick) m_keyboard.Commit();
-    m_kbPrevClick = click;
+    const bool btnEdge = btn && !m_kbPrevBtn;
+
+    if ((lClick && !m_kbPrevClickL) || (btnEdge && lTouch)) {
+        m_keyboard.Commit(0); m_controller->KeyboardHaptic(1);   // left actuator
+    }
+    if ((rClick && !m_kbPrevClickR) || (btnEdge && rTouch)) {
+        m_keyboard.Commit(1); m_controller->KeyboardHaptic(0);   // right actuator
+    }
+    m_kbPrevClickL = lClick;
+    m_kbPrevClickR = rClick;
+    m_kbPrevBtn    = btn;
 }
 
 // ---------------------------------------------------------------------------
@@ -1183,6 +1223,7 @@ void TrayApp::LoadProfileSettings(HKEY key) {
     m_controller->SetHapticOnMove         (rb(L"HapticOnMove", false));
     m_controller->SetHapticIntensity      (static_cast<int>(rd(L"HapticDensity",        50)));
     m_controller->SetHapticClickHardness  (static_cast<int>(rd(L"HapticClickHardness",    2)));
+    m_controller->SetKbClickButton        (static_cast<int>(rd(L"KbClickButton", 0xFFFFFFFF)));
 
     m_controller->ResetButtonMappings();
     for (int i = 0; i < InputMapper::kSourceCount; ++i) {
@@ -1224,6 +1265,7 @@ void TrayApp::SaveProfileSettings(HKEY key) {
     wd(L"RightStickSens",      static_cast<DWORD>(m_controller->GetRightStickSensitivity()));
     wd(L"HapticDensity",       static_cast<DWORD>(m_controller->GetHapticIntensity()));
     wd(L"HapticClickHardness", static_cast<DWORD>(m_controller->GetHapticClickHardness()));
+    wd(L"KbClickButton",       static_cast<DWORD>(m_controller->GetKbClickButton()));
 
     for (int i = 0; i < InputMapper::kSourceCount; ++i) {
         InputMapper::Action a = m_controller->GetButtonAction(i);

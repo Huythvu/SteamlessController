@@ -174,6 +174,12 @@ void ControllerManager::TestHaptic() {
     g_ctrl->RumbleHaptic(1, 0xFD);
 }
 
+void ControllerManager::KeyboardHaptic(uint8_t side) {
+    // A firm two-pulse click on the pad that pressed a key (safe from any thread,
+    // same as TestHaptic).
+    if (g_ctrl && m_connected.load()) g_ctrl->TrackpadHaptic(side, 1600, 2);
+}
+
 void ControllerManager::SuspendTrackpad(bool suspended) {
     m_trackpadSuspended.store(suspended);
     std::lock_guard<std::mutex> lock(m_inputMutex);

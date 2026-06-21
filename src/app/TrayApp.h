@@ -85,8 +85,9 @@ private:
 
     // On-screen keyboard overlay (summoned by Steam + X).
     KeyboardOverlay                    m_keyboard;
-    bool                               m_kbPrevClick = false;
-    std::atomic_bool                   m_pendingKbToggle{false};
+    bool                               m_kbPrevClickL = false;
+    bool                               m_kbPrevClickR = false;
+    bool                               m_kbPrevBtn    = false;
 
     // UI scratch state
     int                                m_currentTab = 0;

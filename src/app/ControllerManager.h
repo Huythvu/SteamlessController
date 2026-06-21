@@ -31,6 +31,9 @@ public:
     // trackpad can drive the keyboard overlay instead.
     void SetKeyboardMode(bool on) { m_keyboardMode = on; }
     bool IsKeyboardMode() const   { return m_keyboardMode.load(); }
+    void KeyboardHaptic(uint8_t side);   // pulse on a key press (side 0=right,1=left)
+    void SetKbClickButton(int sourceIndex) { m_kbClickButton = sourceIndex; }
+    int  GetKbClickButton() const          { return m_kbClickButton; }
 
     // Toggle game mode on/off. No-op if controller is not connected.
     void EnableGameMode();
@@ -121,6 +124,7 @@ private:
     KeyboardToggleFn                   m_onKeyboardToggle;
     std::atomic<bool>                  m_keyboardMode{false};
     bool                               m_prevKbChord = false;
+    int                                m_kbClickButton = -1;   // source index, -1 = none
     std::atomic<bool>                  m_connected{false};
     std::atomic<bool>                  m_gameModeActive{false};
     bool                               m_trackpadMouseEnabled = false;

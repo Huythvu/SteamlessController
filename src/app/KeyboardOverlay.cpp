@@ -86,23 +86,33 @@ void KeyboardOverlay::Hide() {
     m_visible = false;
 }
 
-void KeyboardOverlay::SetPointer(float nx, float ny) {
-    const int px = static_cast<int>(nx * m_w);
-    const int py = static_cast<int>(ny * m_h);
-    int hit = -1;
-    for (int i = 0; i < static_cast<int>(m_keys.size()); ++i) {
-        const RECT& r = m_keys[i].rc;
-        if (px >= r.left && px < r.right && py >= r.top && py < r.bottom) { hit = i; break; }
-    }
-    if (hit != m_sel) {
-        m_sel = hit;
+void KeyboardOverlay::SetPointer(int side, float nx, float ny) {
+    nx = nx < 0 ? 0 : (nx > 1 ? 1 : nx);
+    ny = ny < 0 ? 0 : (ny > 1 ? 1 : ny);
+    // Map the pad's 0..1 into its half of the board (left pad -> left half).
+    const float gridX = (side == 0) ? nx * 0.5f : 0.5f + nx * 0.5f;
+    const int hit = HitAt(gridX, ny);
+    int& sel = (side == 0) ? m_selL : m_selR;
+    if (hit != sel) {
+        sel = hit;
         if (m_hwnd) InvalidateRect(m_hwnd, nullptr, FALSE);
     }
 }
 
-void KeyboardOverlay::Commit() {
-    if (m_sel >= 0 && m_sel < static_cast<int>(m_keys.size()))
-        TypeKey(m_keys[m_sel]);
+int KeyboardOverlay::HitAt(float gridX, float ny) const {
+    const int px = static_cast<int>(gridX * m_w);
+    const int py = static_cast<int>(ny * m_h);
+    for (int i = 0; i < static_cast<int>(m_keys.size()); ++i) {
+        const RECT& r = m_keys[i].rc;
+        if (px >= r.left && px < r.right && py >= r.top && py < r.bottom) return i;
+    }
+    return -1;
+}
+
+void KeyboardOverlay::Commit(int side) {
+    const int sel = (side == 0) ? m_selL : m_selR;
+    if (sel >= 0 && sel < static_cast<int>(m_keys.size()))
+        TypeKey(m_keys[sel]);
 }
 
 void KeyboardOverlay::TypeKey(const Key& k) {
@@ -133,8 +143,10 @@ void KeyboardOverlay::Paint(HDC hdc) {
     FillRect(mem, &full, bg);
     DeleteObject(bg);
 
-    HBRUSH keyBrush = CreateSolidBrush(RGB(48, 50, 56));
-    HBRUSH selBrush = CreateSolidBrush(RGB(60, 150, 240));
+    HBRUSH keyBrush  = CreateSolidBrush(RGB(48, 50, 56));
+    HBRUSH leftBrush = CreateSolidBrush(RGB(60, 170, 90));    // left pad pointer
+    HBRUSH rightBrush= CreateSolidBrush(RGB(60, 150, 240));   // right pad pointer
+    HBRUSH bothBrush = CreateSolidBrush(RGB(150, 110, 230));  // both on same key
     HPEN   pen      = CreatePen(PS_SOLID, 1, RGB(80, 84, 92));
     HPEN   oldPen   = static_cast<HPEN>(SelectObject(mem, pen));
     SetBkMode(mem, TRANSPARENT);
@@ -143,7 +155,10 @@ void KeyboardOverlay::Paint(HDC hdc) {
     for (int i = 0; i < static_cast<int>(m_keys.size()); ++i) {
         RECT r = m_keys[i].rc;
         InflateRect(&r, -3, -3);
-        HBRUSH b = (i == m_sel) ? selBrush : keyBrush;
+        HBRUSH b = keyBrush;
+        if (i == m_selL && i == m_selR) b = bothBrush;
+        else if (i == m_selL)           b = leftBrush;
+        else if (i == m_selR)           b = rightBrush;
         HBRUSH ob = static_cast<HBRUSH>(SelectObject(mem, b));
         RoundRect(mem, r.left, r.top, r.right, r.bottom, 10, 10);
         SelectObject(mem, ob);
@@ -157,7 +172,9 @@ void KeyboardOverlay::Paint(HDC hdc) {
     SelectObject(mem, old);
     DeleteObject(pen);
     DeleteObject(keyBrush);
-    DeleteObject(selBrush);
+    DeleteObject(leftBrush);
+    DeleteObject(rightBrush);
+    DeleteObject(bothBrush);
     DeleteObject(bmp);
     DeleteDC(mem);
 }
