@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <atomic>
+#include "KeyboardOverlay.h"
 
 class ControllerManager;
 
@@ -47,6 +48,7 @@ private:
     void ShowMainWindow();
     void HideToTray();
     void ShowContextMenu();
+    void PollKeyboard();   // drive the on-screen keyboard from the trackpad
 
     // --- Settings / profiles (registry) ---
     std::wstring ProfilePath() const;
@@ -81,6 +83,11 @@ private:
     std::unique_ptr<ControllerManager> m_controller;
     std::wstring                       m_activeProfile = L"Default";
 
+    // On-screen keyboard overlay (summoned by Steam + X).
+    KeyboardOverlay                    m_keyboard;
+    bool                               m_kbPrevClick = false;
+    std::atomic_bool                   m_pendingKbToggle{false};
+
     // UI scratch state
     int                                m_currentTab = 0;
     int                                m_recordIndex = -1;  // source listening for a key
@@ -96,8 +103,10 @@ private:
 
     static constexpr UINT WM_TRAY          = WM_APP + 1;
     static constexpr UINT WM_STATE_CHANGED = WM_APP + 2;
+    static constexpr UINT WM_KB_TOGGLE     = WM_APP + 3;
     static constexpr UINT TRAY_UID         = 1;
     static constexpr UINT BATT_TIMER       = 2;
+    static constexpr UINT KB_TIMER         = 3;
     static constexpr UINT IDM_OPEN         = 1001;
     static constexpr UINT IDM_EXIT         = 1002;
 };

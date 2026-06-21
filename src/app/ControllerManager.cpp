@@ -41,8 +41,10 @@ static float StickExpFromPos(int pos) {
     return                1.0f + (pos - 50) / 50.0f * (0.4f - 1.0f);  // 50→1.0, 100→0.4
 }
 
-ControllerManager::ControllerManager(StateChangedFn onStateChanged)
+ControllerManager::ControllerManager(StateChangedFn onStateChanged,
+                                     KeyboardToggleFn onKeyboardToggle)
     : m_onStateChanged(std::move(onStateChanged))
+    , m_onKeyboardToggle(std::move(onKeyboardToggle))
 {
     // Route trackpad haptic pulses to the physical controller.
     m_trackpad.SetHapticSink([](uint8_t side, uint16_t amp, uint8_t count) {
@@ -327,7 +329,19 @@ void ControllerManager::ReadLoop() {
             continue;
         }
         if (buf[0] != SteamController::REPORT_STATE) continue;
-        {
+
+        // Toggle the on-screen keyboard on a Steam + X chord (rising edge).
+        if (n >= 6 && m_onKeyboardToggle) {
+            const bool steam = (buf[4] & 0x01) != 0;   // Steam/Guide
+            const bool xbtn  = (buf[2] & 0x04) != 0;   // X
+            const bool chord = steam && xbtn;
+            if (chord && !m_prevKbChord) m_onKeyboardToggle();
+            m_prevKbChord = chord;
+        }
+
+        // In keyboard mode the trackpad drives the overlay, so suppress the
+        // normal mouse/gamepad/key output (but still publish the snapshot below).
+        if (!m_keyboardMode.load()) {
             std::lock_guard<std::mutex> lock(m_inputMutex);
             uint16_t buttonBits = m_mapper.Process(buf, n);
             if (m_virtual) m_virtual->Update(buf, n, buttonBits);

@@ -153,10 +153,14 @@ bool TrayApp::Init(HINSTANCE hInstance) {
                               {0x88, 0xCB, 0x00, 0x11, 0x11, 0x00, 0x00, 0x30}};
     m_devNotify = RegisterDeviceNotificationW(m_hwnd, &filter, DEVICE_NOTIFY_WINDOW_HANDLE);
 
+    m_keyboard.Init(hInstance);
     m_controller = std::make_unique<ControllerManager>(
         [this](bool, bool, bool vigemMissing) {
             m_pendingVigemMissing.store(vigemMissing);
             PostMessageW(m_hwnd, WM_STATE_CHANGED, 0, 0);
+        },
+        [this]() {                       // keyboard toggle (from the read thread)
+            PostMessageW(m_hwnd, WM_KB_TOGGLE, 0, 0);
         });
 
     LoadSettings();
@@ -367,8 +371,23 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         UpdateTrayIcon();
         return 0;
 
+    case WM_KB_TOGGLE: {
+        if (m_keyboard.IsVisible()) {
+            m_keyboard.Hide();
+            m_controller->SetKeyboardMode(false);
+            KillTimer(m_hwnd, KB_TIMER);
+        } else {
+            m_keyboard.Show();
+            m_controller->SetKeyboardMode(true);
+            m_kbPrevClick = false;
+            SetTimer(m_hwnd, KB_TIMER, 16, nullptr);   // ~60 Hz poll
+        }
+        return 0;
+    }
+
     case WM_TIMER:
         if (wp == BATT_TIMER) UpdateTrayIcon();
+        else if (wp == KB_TIMER) PollKeyboard();
         return 0;
 
     case WM_DEVICECHANGE:
@@ -1073,6 +1092,31 @@ void TrayApp::ShowContextMenu() {
     TrackPopupMenu(menu, TPM_RIGHTALIGN | TPM_BOTTOMALIGN | TPM_RIGHTBUTTON,
                    pt.x, pt.y, 0, m_hwnd, nullptr);
     DestroyMenu(menu);
+}
+
+// Drive the on-screen keyboard from the right trackpad: touch position aims at a
+// key, a hard click types it. Runs on the UI thread (KB_TIMER) so all the GDI
+// and SendInput work happens off the read thread.
+void TrayApp::PollKeyboard() {
+    if (!m_keyboard.IsVisible()) return;
+    uint8_t rep[64];
+    size_t n = m_controller->GetLatestReport(rep, sizeof(rep));
+    if (n < 30) return;
+
+    const bool touch = (rep[4] & 0x20) != 0;   // right pad active
+    const bool click = (rep[4] & 0x40) != 0;   // right pad hard press
+    if (touch) {
+        int16_t x, y;
+        std::memcpy(&x, rep + 24, 2);
+        std::memcpy(&y, rep + 26, 2);
+        float nx = (static_cast<float>(x) + 32767.0f) / 65534.0f;       // left->0, right->1
+        float ny = (32767.0f - static_cast<float>(y)) / 65534.0f;       // top->0, bottom->1
+        nx = nx < 0 ? 0 : (nx > 1 ? 1 : nx);
+        ny = ny < 0 ? 0 : (ny > 1 ? 1 : ny);
+        m_keyboard.SetPointer(nx, ny);
+    }
+    if (click && !m_kbPrevClick) m_keyboard.Commit();
+    m_kbPrevClick = click;
 }
 
 // ---------------------------------------------------------------------------

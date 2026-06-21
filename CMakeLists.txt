@@ -71,11 +71,12 @@ add_executable(SteamlessController WIN32
     src/app/VirtualController.cpp
     src/app/TrackpadMouse.cpp
     src/app/InputMapper.cpp
+    src/app/KeyboardOverlay.cpp
     resources/app.rc
 )
 target_include_directories(SteamlessController PRIVATE resources)
 target_link_libraries(SteamlessController PRIVATE
-    SteamController ViGEmClient comctl32 imgui d3d11 dxgi d3dcompiler dwmapi)
+    SteamController ViGEmClient comctl32 imgui d3d11 dxgi d3dcompiler dwmapi gdi32 user32)
 if (MSVC)
     target_compile_options(SteamlessController PRIVATE /W4 /WX)
     # We embed our own manifest via app.rc; stop the linker generating a

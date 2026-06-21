@@ -16,14 +16,21 @@ class VirtualController;
 class ControllerManager {
 public:
     using StateChangedFn = std::function<void(bool connected, bool gameModeActive, bool vigemMissing)>;
+    using KeyboardToggleFn = std::function<void()>;   // fired from the read thread
 
-    explicit ControllerManager(StateChangedFn onStateChanged);
+    explicit ControllerManager(StateChangedFn onStateChanged,
+                               KeyboardToggleFn onKeyboardToggle = nullptr);
     ~ControllerManager();
     ControllerManager(const ControllerManager&) = delete;
     ControllerManager& operator=(const ControllerManager&) = delete;
 
     // Called when Windows reports a device arrival or removal (WM_DEVICECHANGE).
     void OnDeviceChange();
+
+    // On-screen keyboard mode: suppress normal mouse/gamepad/key output so the
+    // trackpad can drive the keyboard overlay instead.
+    void SetKeyboardMode(bool on) { m_keyboardMode = on; }
+    bool IsKeyboardMode() const   { return m_keyboardMode.load(); }
 
     // Toggle game mode on/off. No-op if controller is not connected.
     void EnableGameMode();
@@ -111,6 +118,9 @@ private:
     void ReadLoop();
 
     StateChangedFn                     m_onStateChanged;
+    KeyboardToggleFn                   m_onKeyboardToggle;
+    std::atomic<bool>                  m_keyboardMode{false};
+    bool                               m_prevKbChord = false;
     std::atomic<bool>                  m_connected{false};
     std::atomic<bool>                  m_gameModeActive{false};
     bool                               m_trackpadMouseEnabled = false;
