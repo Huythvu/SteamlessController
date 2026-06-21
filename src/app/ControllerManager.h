@@ -34,6 +34,10 @@ public:
     void KeyboardHaptic(uint8_t side);   // pulse on a key press (side 0=right,1=left)
     void SetKbClickButton(int sourceIndex) { m_kbClickButton = sourceIndex; }
     int  GetKbClickButton() const          { return m_kbClickButton; }
+    void SetKbSplit(bool b)    { m_kbSplit = b; }
+    bool IsKbSplit() const     { return m_kbSplit; }
+    void SetKbRelative(bool b) { m_kbRelative = b; }
+    bool IsKbRelative() const  { return m_kbRelative; }
 
     // Toggle game mode on/off. No-op if controller is not connected.
     void EnableGameMode();
@@ -125,6 +129,8 @@ private:
     std::atomic<bool>                  m_keyboardMode{false};
     bool                               m_prevKbChord = false;
     int                                m_kbClickButton = -1;   // source index, -1 = none
+    bool                               m_kbSplit       = true;
+    bool                               m_kbRelative    = false;
     std::atomic<bool>                  m_connected{false};
     std::atomic<bool>                  m_gameModeActive{false};
     bool                               m_trackpadMouseEnabled = false;

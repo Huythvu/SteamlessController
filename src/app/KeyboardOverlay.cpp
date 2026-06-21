@@ -74,6 +74,13 @@ void KeyboardOverlay::Show() {
         if (!m_hwnd) return;
         SetWindowLongPtrW(m_hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
     }
+    // Start each pointer centred in its range.
+    for (int s = 0; s < 2; ++s) {
+        float lo, hi; RangeFor(s, lo, hi);
+        m_cx[s] = (lo + hi) * 0.5f;
+        m_cy[s] = 0.5f;
+        UpdateSel(s);
+    }
     // SW_SHOWNOACTIVATE keeps focus on the app being typed into.
     ShowWindow(m_hwnd, SW_SHOWNOACTIVATE);
     SetWindowPos(m_hwnd, HWND_TOPMOST, 0, 0, 0, 0,
@@ -86,17 +93,36 @@ void KeyboardOverlay::Hide() {
     m_visible = false;
 }
 
-void KeyboardOverlay::SetPointer(int side, float nx, float ny) {
-    nx = nx < 0 ? 0 : (nx > 1 ? 1 : nx);
-    ny = ny < 0 ? 0 : (ny > 1 ? 1 : ny);
-    // Map the pad's 0..1 into its half of the board (left pad -> left half).
-    const float gridX = (side == 0) ? nx * 0.5f : 0.5f + nx * 0.5f;
-    const int hit = HitAt(gridX, ny);
+void KeyboardOverlay::RangeFor(int side, float& lo, float& hi) const {
+    if (m_split) { lo = (side == 0) ? 0.0f : 0.5f; hi = (side == 0) ? 0.5f : 1.0f; }
+    else         { lo = 0.0f; hi = 1.0f; }
+}
+
+void KeyboardOverlay::UpdateSel(int side) {
+    const int hit = HitAt(m_cx[side], m_cy[side]);
     int& sel = (side == 0) ? m_selL : m_selR;
     if (hit != sel) {
         sel = hit;
         if (m_hwnd) InvalidateRect(m_hwnd, nullptr, FALSE);
     }
+}
+
+void KeyboardOverlay::SetPointerAbs(int side, float nx, float ny) {
+    nx = nx < 0 ? 0 : (nx > 1 ? 1 : nx);
+    ny = ny < 0 ? 0 : (ny > 1 ? 1 : ny);
+    float lo, hi; RangeFor(side, lo, hi);
+    m_cx[side] = lo + nx * (hi - lo);   // map pad position into the side's range
+    m_cy[side] = ny;
+    UpdateSel(side);
+}
+
+void KeyboardOverlay::MovePointer(int side, float dnx, float dny) {
+    float lo, hi; RangeFor(side, lo, hi);
+    float cx = m_cx[side] + dnx;
+    float cy = m_cy[side] + dny;
+    m_cx[side] = cx < lo ? lo : (cx > hi ? hi : cx);
+    m_cy[side] = cy < 0 ? 0 : (cy > 1 ? 1 : cy);
+    UpdateSel(side);
 }
 
 int KeyboardOverlay::HitAt(float gridX, float ny) const {

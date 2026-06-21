@@ -15,9 +15,13 @@ public:
     void Hide();
     bool IsVisible() const { return m_visible; }
 
-    // Each trackpad drives its own half: side 0 = left pad -> left half of the
-    // keyboard, side 1 = right pad -> right half. Each has its own pointer.
-    void SetPointer(int side, float nx, float ny);
+    // Each trackpad drives its own pointer. Split mode confines a pad to its
+    // half of the board; otherwise each pad can reach the whole board.
+    void SetSplit(bool split) { m_split = split; }
+    // Absolute: the pad position maps straight to a board position.
+    void SetPointerAbs(int side, float nx, float ny);
+    // Relative: slide from anywhere; the pointer moves by the finger delta.
+    void MovePointer(int side, float dnx, float dny);
     // Type the highlighted key for one side into the focused application.
     void Commit(int side);
     HWND Hwnd() const { return m_hwnd; }
@@ -29,13 +33,18 @@ private:
     void BuildLayout();
     void Paint(HDC hdc);
     int  HitAt(float gridX, float ny) const;
+    void RangeFor(int side, float& lo, float& hi) const;
+    void UpdateSel(int side);
     static void TypeKey(const Key& k);
 
     HINSTANCE         m_hinst   = nullptr;
     HWND              m_hwnd    = nullptr;
     bool              m_visible = false;
+    bool              m_split   = true;
     int               m_selL    = -1;   // left pad's highlighted key
     int               m_selR    = -1;   // right pad's highlighted key
+    float             m_cx[2]   = { 0.25f, 0.75f };  // pointer position per side
+    float             m_cy[2]   = { 0.5f,  0.5f  };
     int               m_w       = 820;
     int               m_h       = 320;
     std::vector<Key>  m_keys;

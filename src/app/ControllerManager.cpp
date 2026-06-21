@@ -175,9 +175,9 @@ void ControllerManager::TestHaptic() {
 }
 
 void ControllerManager::KeyboardHaptic(uint8_t side) {
-    // A firm two-pulse click on the pad that pressed a key (safe from any thread,
-    // same as TestHaptic).
-    if (g_ctrl && m_connected.load()) g_ctrl->TrackpadHaptic(side, 1600, 2);
+    // A single firm pulse on the pad that pressed (fired on both press and
+    // release for a two-way click). Safe from any thread, like TestHaptic.
+    if (g_ctrl && m_connected.load()) g_ctrl->TrackpadHaptic(side, 2000, 1);
 }
 
 void ControllerManager::SuspendTrackpad(bool suspended) {

@@ -88,6 +88,9 @@ private:
     bool                               m_kbPrevClickL = false;
     bool                               m_kbPrevClickR = false;
     bool                               m_kbPrevBtn    = false;
+    float                              m_kbPrevNx[2]  = { 0.0f, 0.0f };  // relative mode
+    float                              m_kbPrevNy[2]  = { 0.0f, 0.0f };
+    bool                               m_kbWasTouch[2]= { false, false };
 
     // UI scratch state
     int                                m_currentTab = 0;

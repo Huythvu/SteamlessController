@@ -378,9 +378,11 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             m_controller->SetKeyboardMode(false);
             KillTimer(m_hwnd, KB_TIMER);
         } else {
+            m_keyboard.SetSplit(m_controller->IsKbSplit());
             m_keyboard.Show();
             m_controller->SetKeyboardMode(true);
             m_kbPrevClickL = m_kbPrevClickR = m_kbPrevBtn = false;
+            m_kbWasTouch[0] = m_kbWasTouch[1] = false;
             SetTimer(m_hwnd, KB_TIMER, 16, nullptr);   // ~60 Hz poll
         }
         return 0;
@@ -686,6 +688,14 @@ void TrayApp::DrawTabs() {
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::TextDisabled("ON-SCREEN KEYBOARD (Steam + X)");
+        bool split = c.IsKbSplit();
+        if (ImGui::Checkbox("Split: each pad controls its half", &split)) {
+            c.SetKbSplit(split); SaveSettings();
+        }
+        bool rel = c.IsKbRelative();
+        if (ImGui::Checkbox("Slide to move (relative) instead of touch position", &rel)) {
+            c.SetKbRelative(rel); SaveSettings();
+        }
         // Optional extra button that also types the highlighted key(s).
         int kbBtn = c.GetKbClickButton();
         std::string kbPreview = kbBtn < 0 ? "None (pad press only)"
@@ -1125,6 +1135,9 @@ void TrayApp::PollKeyboard() {
     size_t n = m_controller->GetLatestReport(rep, sizeof(rep));
     if (n < 30) return;
 
+    m_keyboard.SetSplit(m_controller->IsKbSplit());
+    const bool relative = m_controller->IsKbRelative();
+
     auto pad = [&](int xi, int yi) {
         int16_t x, y;
         std::memcpy(&x, rep + xi, 2);
@@ -1134,28 +1147,48 @@ void TrayApp::PollKeyboard() {
         return std::pair<float, float>(nx, ny);
     };
 
-    const bool lTouch = (rep[5] & 0x02) != 0, lClick = (rep[5] & 0x04) != 0;  // left pad
-    const bool rTouch = (rep[4] & 0x20) != 0, rClick = (rep[4] & 0x40) != 0;  // right pad
-    if (lTouch) { auto p = pad(18, 20); m_keyboard.SetPointer(0, p.first, p.second); }
-    if (rTouch) { auto p = pad(24, 26); m_keyboard.SetPointer(1, p.first, p.second); }
+    const bool touch[2] = { (rep[5] & 0x02) != 0, (rep[4] & 0x20) != 0 };  // left, right
+    const bool click[2] = { (rep[5] & 0x04) != 0, (rep[4] & 0x40) != 0 };
+    const int  xi[2] = { 18, 24 }, yi[2] = { 20, 26 };
 
-    // A configurable button (optional) types whichever pad(s) you're touching.
+    for (int s = 0; s < 2; ++s) {
+        if (touch[s]) {
+            auto p = pad(xi[s], yi[s]);
+            if (relative) {
+                if (m_kbWasTouch[s])
+                    m_keyboard.MovePointer(s, (p.first - m_kbPrevNx[s]) * 1.4f,
+                                              (p.second - m_kbPrevNy[s]) * 1.4f);
+                m_kbPrevNx[s] = p.first; m_kbPrevNy[s] = p.second;
+            } else {
+                m_keyboard.SetPointerAbs(s, p.first, p.second);
+            }
+        }
+        m_kbWasTouch[s] = touch[s];
+    }
+
+    // Optional extra button types whichever pad(s) you're touching.
     bool btn = false;
     int  kbBtn = m_controller->GetKbClickButton();
     if (kbBtn >= 0 && kbBtn < InputMapper::kSourceCount) {
-        const InputMapper::Source& s = InputMapper::kSources[kbBtn];
-        btn = n > s.byteIndex && (rep[s.byteIndex] & s.mask) != 0;
+        const InputMapper::Source& src = InputMapper::kSources[kbBtn];
+        btn = n > src.byteIndex && (rep[src.byteIndex] & src.mask) != 0;
     }
     const bool btnEdge = btn && !m_kbPrevBtn;
+    const bool prevClick[2] = { m_kbPrevClickL, m_kbPrevClickR };
+    const uint8_t actuator[2] = { 1, 0 };   // left pad -> side 1, right pad -> side 0
 
-    if ((lClick && !m_kbPrevClickL) || (btnEdge && lTouch)) {
-        m_keyboard.Commit(0); m_controller->KeyboardHaptic(1);   // left actuator
+    for (int s = 0; s < 2; ++s) {
+        const bool press   = click[s] && !prevClick[s];
+        const bool release = !click[s] && prevClick[s];
+        if (press || (btnEdge && touch[s])) {
+            m_keyboard.Commit(s);
+            m_controller->KeyboardHaptic(actuator[s]);   // press feedback
+        } else if (release) {
+            m_controller->KeyboardHaptic(actuator[s]);   // release feedback
+        }
     }
-    if ((rClick && !m_kbPrevClickR) || (btnEdge && rTouch)) {
-        m_keyboard.Commit(1); m_controller->KeyboardHaptic(0);   // right actuator
-    }
-    m_kbPrevClickL = lClick;
-    m_kbPrevClickR = rClick;
+    m_kbPrevClickL = click[0];
+    m_kbPrevClickR = click[1];
     m_kbPrevBtn    = btn;
 }
 
@@ -1224,6 +1257,8 @@ void TrayApp::LoadProfileSettings(HKEY key) {
     m_controller->SetHapticIntensity      (static_cast<int>(rd(L"HapticDensity",        50)));
     m_controller->SetHapticClickHardness  (static_cast<int>(rd(L"HapticClickHardness",    2)));
     m_controller->SetKbClickButton        (static_cast<int>(rd(L"KbClickButton", 0xFFFFFFFF)));
+    m_controller->SetKbSplit              (rb(L"KbSplit",    true));
+    m_controller->SetKbRelative           (rb(L"KbRelative", false));
 
     m_controller->ResetButtonMappings();
     for (int i = 0; i < InputMapper::kSourceCount; ++i) {
@@ -1266,6 +1301,8 @@ void TrayApp::SaveProfileSettings(HKEY key) {
     wd(L"HapticDensity",       static_cast<DWORD>(m_controller->GetHapticIntensity()));
     wd(L"HapticClickHardness", static_cast<DWORD>(m_controller->GetHapticClickHardness()));
     wd(L"KbClickButton",       static_cast<DWORD>(m_controller->GetKbClickButton()));
+    wb(L"KbSplit",             m_controller->IsKbSplit());
+    wb(L"KbRelative",          m_controller->IsKbRelative());
 
     for (int i = 0; i < InputMapper::kSourceCount; ++i) {
         InputMapper::Action a = m_controller->GetButtonAction(i);
