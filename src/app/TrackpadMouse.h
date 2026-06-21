@@ -14,13 +14,6 @@ public:
     void SetScrollSensitivity(float sensitivity) { m_scrollSensitivity  = sensitivity; }
     void SetSmartScroll(bool enabled)            { m_smartScroll        = enabled; }
 
-    // Smart deadzone: anti-jitter radial deadzone -> soft response curve ->
-    // acceleration -> smoothing, for a gliding feel instead of a hard cutoff.
-    void SetSmartDeadzone(bool enabled)  { m_smartDeadzone  = enabled; }
-    void SetSmartCurve(float curve)      { m_smartCurve     = curve; }    // >=1, higher = gentler small moves
-    void SetSmartSmoothing(float amount) { m_smartSmoothing = amount; }   // 0..~0.95
-    void SetSmartAccel(float amount)     { m_smartAccel     = amount; }   // 0 = off
-
     // Local trackpad haptics. The sink fires (side, amplitude, pulse count).
     void SetHapticSink(std::function<void(uint8_t, uint16_t, uint8_t)> sink) { m_haptic = std::move(sink); }
     void SetHapticOnClick(bool enabled)    { m_hapticOnClick = enabled; }
@@ -55,15 +48,6 @@ private:
     float    m_accumX     = 0.0f;   // carry sub-pixel movement between frames
     float    m_accumY     = 0.0f;
 
-    // Smart-deadzone settings + smoothing state
-    bool     m_smartDeadzone  = false;
-    float    m_smartCurve     = 2.0f;
-    float    m_smartSmoothing = 0.4f;
-    float    m_smartAccel     = 0.5f;
-    float    m_smoothX        = 0.0f;   // smoothed output, persists between frames
-    float    m_smoothY        = 0.0f;
-    static constexpr float kSmartMaxInput = 5000.0f;  // raw delta treated as "full speed"
-
     // Scroll-wheel state (vertical + horizontal)
     bool     m_scrollTouching = false;
     bool     m_scrollPrevClick = false;
@@ -72,6 +56,14 @@ private:
     float    m_scrollAccum    = 0.0f;    // fractional vertical wheel carry
     float    m_scrollAccumX   = 0.0f;    // fractional horizontal wheel carry
     float    m_scrollMoveAccum = 0.0f;   // distance since last scroll haptic tick
+    // Smart-scroll state
+    int16_t  m_scrollStartX   = 0;       // touch-down origin (for tap rejection)
+    int16_t  m_scrollStartY   = 0;
+    bool     m_scrollActive   = false;   // has this stroke moved enough to scroll?
+    int      m_scrollBufX     = 0;       // 1-frame delay buffer (drops lift-off spike)
+    int      m_scrollBufY     = 0;
+    static constexpr int kScrollActivate = 200;  // travel from touch-down before scrolling
+    static constexpr int kScrollNoise    = 40;   // per-frame noise floor (reject jitter)
 
     // Click haptic edge state
     bool     m_prevClick  = false;

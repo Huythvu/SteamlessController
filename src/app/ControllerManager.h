@@ -44,12 +44,6 @@ public:
     void SetMouseDeadzone(int pos);         // 1..100 (50 = baseline)
     void SetScrollDeadzone(int pos);        // 1..100 (50 = baseline)
 
-    // Smart deadzone (smooth/gliding mouse response). Toggle + 1..100 sliders.
-    void SetSmartDeadzone(bool enabled);
-    void SetSmartCurve(int pos);            // 1..100 (response curve)
-    void SetSmartSmoothing(int pos);        // 1..100 (glide amount)
-    void SetSmartAccel(int pos);            // 1..100 (acceleration; low = little)
-
     void SetLeftDeadzone(int pos);          // 0..90
     void SetRightDeadzone(int pos);         // 0..90
     void SetLeftStickSensitivity(int pos);  // 1..100
@@ -66,10 +60,6 @@ public:
     int  GetScrollSensitivity()    const { return m_scrollSensitivity; }
     int  GetMouseDeadzone()        const { return m_mouseDeadzone; }
     int  GetScrollDeadzone()       const { return m_scrollDeadzone; }
-    bool IsSmartDeadzone()         const { return m_smartDeadzone; }
-    int  GetSmartCurve()           const { return m_smartCurve; }
-    int  GetSmartSmoothing()       const { return m_smartSmoothing; }
-    int  GetSmartAccel()           const { return m_smartAccel; }
     int  GetMouseDeadzoneRaw()     const;   // per-frame threshold in pad units
     int  GetScrollDeadzoneRaw()    const;
     int  GetLastMouseMove()        const { return m_trackpad.LastMouseMove(); }
@@ -138,10 +128,6 @@ private:
     int                                m_scrollSensitivity    = 30;   // 1..100
     int                                m_mouseDeadzone        = 50;   // 1..100 (slider pos)
     int                                m_scrollDeadzone       = 50;   // 1..100 (slider pos)
-    bool                               m_smartDeadzone        = false;
-    int                                m_smartCurve           = 50;   // 1..100
-    int                                m_smartSmoothing       = 40;   // 1..100
-    int                                m_smartAccel           = 25;   // 1..100
     int                                m_lDeadzone            = 10;   // 0..90 (%)
     int                                m_rDeadzone            = 10;   // 0..90 (%)
     int                                m_lStickSens           = 50;   // 1..100

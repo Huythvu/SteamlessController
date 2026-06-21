@@ -2,7 +2,6 @@
 #include "steam/SteamController.h"
 #include <Windows.h>
 #include <cstring>
-#include <cmath>
 
 static constexpr uint8_t BTN_TP_RT_CLICK = 0x40;  // buf[4] bit 6 — right pad hard press
 
@@ -64,63 +63,52 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
             const int adx   = rawdx < 0 ? -rawdx : rawdx;
             const int ady   = rawdy < 0 ? -rawdy : rawdy;
             m_lastMouseMove.store(adx + ady);   // publish for the live view
-
-            float fdx = 0.0f, fdy = 0.0f;       // pixels to move this frame
-            if (m_smartDeadzone) {
-                // Anti-jitter radial deadzone -> soft curve -> accel -> smoothing.
-                const float mag = std::sqrt(static_cast<float>(rawdx) * rawdx +
-                                            static_cast<float>(rawdy) * rawdy);
-                const float dz  = static_cast<float>(m_mouseDeadzone);
-                float targetX = 0.0f, targetY = 0.0f;
-                if (mag > dz) {
-                    float t = (mag - dz) / (kSmartMaxInput - dz);   // remap from 0 (no jump)
-                    if (t > 1.0f) t = 1.0f;
-                    const float shaped = std::pow(t, m_smartCurve); // gentle small moves
-                    float speed = shaped * kSmartMaxInput * m_sensitivity;
-                    if (m_smartAccel > 0.0f) speed *= 1.0f + m_smartAccel * t;
-                    const float inv = 1.0f / mag;
-                    targetX =  rawdx * inv * speed;
-                    targetY = -rawdy * inv * speed;             // up = up
+            // Deadzone: ignore movement below the threshold (resting jitter).
+            if (adx + ady > m_mouseDeadzone) {
+                // Accumulate fractional movement so slow motion isn't lost to
+                // truncation (a single frame's delta * sensitivity can be < 1px).
+                const float fdx =  rawdx * m_sensitivity + m_accumX;
+                const float fdy = -rawdy * m_sensitivity + m_accumY;  // up = up
+                const int   idx = static_cast<int>(fdx);
+                const int   idy = static_cast<int>(fdy);
+                m_accumX = fdx - idx;
+                m_accumY = fdy - idy;
+                if (idx != 0 || idy != 0) {
+                    INPUT input{};
+                    input.type       = INPUT_MOUSE;
+                    input.mi.dwFlags = MOUSEEVENTF_MOVE;
+                    input.mi.dx      = idx;
+                    input.mi.dy      = idy;
+                    SendInput(1, &input, sizeof(INPUT));
                 }
-                // Glide toward the target instead of snapping (smoothing).
-                const float follow = 1.0f - m_smartSmoothing;
-                m_smoothX += (targetX - m_smoothX) * follow;
-                m_smoothY += (targetY - m_smoothY) * follow;
-                fdx = m_smoothX + m_accumX;
-                fdy = m_smoothY + m_accumY;
-            } else if (adx + ady > m_mouseDeadzone) {
-                // Hard deadzone + linear response (original behaviour).
-                fdx =  rawdx * m_sensitivity + m_accumX;
-                fdy = -rawdy * m_sensitivity + m_accumY;        // up = up
-            } else {
-                fdx = m_accumX;
-                fdy = m_accumY;
-            }
-
-            // Accumulate fractional movement so slow motion isn't lost to
-            // truncation (a single frame's delta can round to < 1px).
-            const int idx = static_cast<int>(fdx);
-            const int idy = static_cast<int>(fdy);
-            m_accumX = fdx - idx;
-            m_accumY = fdy - idy;
-            if (idx != 0 || idy != 0) {
-                INPUT input{};
-                input.type       = INPUT_MOUSE;
-                input.mi.dwFlags = MOUSEEVENTF_MOVE;
-                input.mi.dx      = idx;
-                input.mi.dy      = idy;
-                SendInput(1, &input, sizeof(INPUT));
             }
         }
 
         if (pad.touching) { m_prevX = pad.x; m_prevY = pad.y; }
-        else { m_accumX = m_accumY = 0.0f; m_smoothX = m_smoothY = 0.0f; m_lastMouseMove.store(0); }
+        else { m_accumX = m_accumY = 0.0f; m_lastMouseMove.store(0); }
         m_touching = pad.touching;
     }
 
     // --- Trackpad scroll wheel (vertical + horizontal) ---
     if (m_scrollEnabled) {
         const Pad pad = ReadPad(buf, scrollLeft);
+
+        auto sendWheel = [](DWORD flag, int ticks) {
+            INPUT input{};
+            input.type         = INPUT_MOUSE;
+            input.mi.dwFlags   = flag;
+            input.mi.mouseData = static_cast<DWORD>(ticks);
+            SendInput(1, &input, sizeof(INPUT));
+        };
+
+        if (pad.touching && !m_scrollTouching) {
+            // Touch-down: record the origin and require real travel before
+            // scrolling so a tap (which barely moves) never scrolls.
+            m_scrollStartX = pad.x; m_scrollStartY = pad.y;
+            m_scrollActive = false;
+            m_scrollBufX = m_scrollBufY = 0;
+            m_scrollAccum = m_scrollAccumX = 0.0f;
+        }
 
         if (pad.touching && m_scrollTouching) {
             const int rawdy = pad.y - m_scrollPrevY;
@@ -129,20 +117,18 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
             const int adx   = rawdx < 0 ? -rawdx : rawdx;
             m_lastScrollMove.store(ady + adx);   // publish for the live view
 
-            auto sendWheel = [](DWORD flag, int ticks) {
-                INPUT input{};
-                input.type         = INPUT_MOUSE;
-                input.mi.dwFlags   = flag;
-                input.mi.mouseData = static_cast<DWORD>(ticks);
-                SendInput(1, &input, sizeof(INPUT));
-            };
-
             if (m_smartScroll) {
-                // Accumulate movement so slow strokes still scroll. Reject
-                // jitter: bleed off progress below the noise floor, and reset on
-                // a direction reversal (random back-and-forth never builds up).
+                // Tap rejection: stay idle until the finger has travelled a
+                // minimum distance from where it touched down.
+                const long long ddx = pad.x - m_scrollStartX;
+                const long long ddy = pad.y - m_scrollStartY;
+                if (!m_scrollActive &&
+                    ddx * ddx + ddy * ddy >=
+                        static_cast<long long>(kScrollActivate) * kScrollActivate)
+                    m_scrollActive = true;
+
                 auto axis = [&](int rawd, int ad, float dirSign, float& accum, DWORD flag) {
-                    if (ad <= m_scrollDeadzone) { accum *= 0.6f; return; }   // noise floor
+                    if (ad <= kScrollNoise) { accum *= 0.6f; return; }   // noise floor
                     const float v = dirSign * static_cast<float>(rawd) * m_scrollSensitivity;
                     if ((v < 0.0f) != (accum < 0.0f) && accum != 0.0f) accum = 0.0f;
                     accum += v;
@@ -150,8 +136,16 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
                     accum -= ticks;
                     if (ticks != 0) sendWheel(flag, ticks);
                 };
-                axis(rawdy, ady, m_invertScroll ? -1.0f : 1.0f, m_scrollAccum,  MOUSEEVENTF_WHEEL);
-                axis(rawdx, adx, 1.0f,                          m_scrollAccumX, MOUSEEVENTF_HWHEEL);
+                if (m_scrollActive) {
+                    // Apply the PREVIOUS frame's movement and buffer the current
+                    // one. On release the buffered (last) delta is dropped, which
+                    // kills the backward flick as the thumb rolls off the pad.
+                    axis(m_scrollBufY, m_scrollBufY < 0 ? -m_scrollBufY : m_scrollBufY,
+                         m_invertScroll ? -1.0f : 1.0f, m_scrollAccum,  MOUSEEVENTF_WHEEL);
+                    axis(m_scrollBufX, m_scrollBufX < 0 ? -m_scrollBufX : m_scrollBufX,
+                         1.0f, m_scrollAccumX, MOUSEEVENTF_HWHEEL);
+                }
+                m_scrollBufY = rawdy; m_scrollBufX = rawdx;
             } else {
                 // Vertical wheel. Per-frame deadzone ignores slow/tiny movement.
                 if (ady > m_scrollDeadzone) {
@@ -172,7 +166,12 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
         }
 
         if (pad.touching) { m_scrollPrevY = pad.y; m_scrollPrevX = pad.x; }
-        else { m_scrollAccum = 0.0f; m_scrollAccumX = 0.0f; m_lastScrollMove.store(0); }
+        else {
+            m_scrollAccum = m_scrollAccumX = 0.0f;
+            m_scrollActive = false;
+            m_scrollBufX = m_scrollBufY = 0;   // drop the lift-off delta
+            m_lastScrollMove.store(0);
+        }
         m_scrollTouching = pad.touching;
     }
 

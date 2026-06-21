@@ -34,11 +34,6 @@ static int ScrollDzFromPos(int pos) {
     return pos <= 0 ? 0 : pos * 12;     // 0 = off .. 1200 (preserves ~600 at 50)
 }
 
-// Smart-deadzone slider (1..100) -> tuning floats.
-static float SmartCurveFromPos(int pos)  { return 1.0f + pos * 0.02f; }   // 1.02 .. 3.0
-static float SmartSmoothFromPos(int pos) { return pos * 0.009f; }         // 0.009 .. 0.9
-static float SmartAccelFromPos(int pos)  { return pos * 0.02f; }          // 0.02 .. 2.0
-
 // Map a 1..100 stick-sensitivity position to a response-curve exponent:
 // 50 = linear, lower = gentler near center, higher = more aggressive.
 static float StickExpFromPos(int pos) {
@@ -95,10 +90,6 @@ void ControllerManager::EnableGameMode() {
         m_trackpad.SetScrollSensitivity(ScrollSensFromPos(m_scrollSensitivity));
         m_trackpad.SetMouseDeadzone(MouseDzFromPos(m_mouseDeadzone));
         m_trackpad.SetScrollDeadzone(ScrollDzFromPos(m_scrollDeadzone));
-        m_trackpad.SetSmartDeadzone(m_smartDeadzone);
-        m_trackpad.SetSmartCurve(SmartCurveFromPos(m_smartCurve));
-        m_trackpad.SetSmartSmoothing(SmartSmoothFromPos(m_smartSmoothing));
-        m_trackpad.SetSmartAccel(SmartAccelFromPos(m_smartAccel));
         m_trackpad.SetHapticOnClick(m_hapticOnClick);
         m_trackpad.SetHapticOnMove(m_hapticOnMove);
         m_trackpad.SetClickHardness(m_clickHardness);
@@ -235,36 +226,6 @@ void ControllerManager::SetScrollDeadzone(int pos) {
 
 int ControllerManager::GetMouseDeadzoneRaw()  const { return MouseDzFromPos(m_mouseDeadzone); }
 int ControllerManager::GetScrollDeadzoneRaw() const { return ScrollDzFromPos(m_scrollDeadzone); }
-
-void ControllerManager::SetSmartDeadzone(bool enabled) {
-    m_smartDeadzone = enabled;
-    std::lock_guard<std::mutex> lock(m_inputMutex);
-    m_trackpad.SetSmartDeadzone(enabled);
-}
-
-void ControllerManager::SetSmartCurve(int pos) {
-    if (pos < 1)   pos = 1;
-    if (pos > 100) pos = 100;
-    m_smartCurve = pos;
-    std::lock_guard<std::mutex> lock(m_inputMutex);
-    m_trackpad.SetSmartCurve(SmartCurveFromPos(pos));
-}
-
-void ControllerManager::SetSmartSmoothing(int pos) {
-    if (pos < 1)   pos = 1;
-    if (pos > 100) pos = 100;
-    m_smartSmoothing = pos;
-    std::lock_guard<std::mutex> lock(m_inputMutex);
-    m_trackpad.SetSmartSmoothing(SmartSmoothFromPos(pos));
-}
-
-void ControllerManager::SetSmartAccel(int pos) {
-    if (pos < 1)   pos = 1;
-    if (pos > 100) pos = 100;
-    m_smartAccel = pos;
-    std::lock_guard<std::mutex> lock(m_inputMutex);
-    m_trackpad.SetSmartAccel(SmartAccelFromPos(pos));
-}
 
 void ControllerManager::SetLeftDeadzone(int pos) {
     if (pos < 0)  pos = 0;
