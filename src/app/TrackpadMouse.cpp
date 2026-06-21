@@ -36,7 +36,9 @@ void TrackpadMouse::Reset() {
     m_scrollTouching = false;
     m_scrollPrevClick = false;
     m_scrollPrevY    = 0;
+    m_scrollPrevX    = 0;
     m_scrollAccum    = 0.0f;
+    m_scrollAccumX   = 0.0f;
     m_scrollMoveAccum = 0.0f;
     m_moveAccum      = 0.0f;
     m_hpMt = m_hpSt  = false;
@@ -87,15 +89,18 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
         m_touching = pad.touching;
     }
 
-    // --- Trackpad scroll wheel (vertical) ---
+    // --- Trackpad scroll wheel (vertical + horizontal) ---
     if (m_scrollEnabled) {
         const Pad pad = ReadPad(buf, scrollLeft);
 
         if (pad.touching && m_scrollTouching) {
             const int rawdy = pad.y - m_scrollPrevY;
+            const int rawdx = pad.x - m_scrollPrevX;
             const int ady   = rawdy < 0 ? -rawdy : rawdy;
-            m_lastScrollMove.store(ady);   // publish for the live view
-            // Deadzone: ignore tiny movement so a resting thumb doesn't scroll.
+            const int adx   = rawdx < 0 ? -rawdx : rawdx;
+            m_lastScrollMove.store(ady + adx);   // publish for the live view
+
+            // Vertical wheel. Deadzone ignores tiny movement (resting thumb).
             if (ady > m_scrollDeadzone) {
                 // Natural direction: finger up scrolls up. Invert flips it.
                 const float dir    = m_invertScroll ? -1.0f : 1.0f;
@@ -110,10 +115,24 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
                     SendInput(1, &input, sizeof(INPUT));
                 }
             }
+
+            // Horizontal wheel. Finger right scrolls right (natural swipe).
+            if (adx > m_scrollDeadzone) {
+                const float fdelta = rawdx * m_scrollSensitivity + m_scrollAccumX;
+                const int   ticks  = static_cast<int>(fdelta);
+                m_scrollAccumX = fdelta - ticks;
+                if (ticks != 0) {
+                    INPUT input{};
+                    input.type         = INPUT_MOUSE;
+                    input.mi.dwFlags   = MOUSEEVENTF_HWHEEL;
+                    input.mi.mouseData = static_cast<DWORD>(ticks);
+                    SendInput(1, &input, sizeof(INPUT));
+                }
+            }
         }
 
-        if (pad.touching) m_scrollPrevY = pad.y;
-        else { m_scrollAccum = 0.0f; m_lastScrollMove.store(0); }
+        if (pad.touching) { m_scrollPrevY = pad.y; m_scrollPrevX = pad.x; }
+        else { m_scrollAccum = 0.0f; m_scrollAccumX = 0.0f; m_lastScrollMove.store(0); }
         m_scrollTouching = pad.touching;
     }
 
@@ -138,14 +157,12 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
     // density, so left and right feel identical. Independent of the mouse /
     // scroll output toggles, so e.g. the scroll pad still buzzes per movement
     // even with the scroll wheel turned off.
-    auto moveTexture = [&](const Pad& pad, bool enabled, bool verticalOnly, bool& prevTouch,
+    auto moveTexture = [&](const Pad& pad, bool& prevTouch,
                            int16_t& px, int16_t& py, float& accum, uint8_t side) {
-        if (enabled && pad.touching && prevTouch) {
+        if (m_hapticOnMove && pad.touching && prevTouch) {
             const int dx = pad.x - px < 0 ? px - pad.x : pad.x - px;
             const int dy = pad.y - py < 0 ? py - pad.y : pad.y - py;
-            // Mouse counts travel in any direction; the scroll pad only counts
-            // vertical travel (that's the axis it scrolls), at the SAME density.
-            accum += static_cast<float>(verticalOnly ? dy : dx + dy);
+            accum += static_cast<float>(dx + dy);   // total 2D travel, any direction
             if (accum >= m_moveTickDistance) {
                 accum = 0.0f;
                 fireHaptic(side, HAPTIC_MOVE);
@@ -155,9 +172,8 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
         else                accum = 0.0f;
         prevTouch = pad.touching;
     };
-    // Mouse pad: all-axis. Scroll pad: mode 1 = all-axis (identical to mouse),
-    // mode 2 = vertical-only (matches vertical scrolling). Same density for all.
-    moveTexture(mp, m_hapticOnMove,          false, m_hpMt, m_hpMx, m_hpMy, m_moveAccum,       mousePadSide());
-    moveTexture(sp, m_scrollHapticMode != 0, m_scrollHapticMode == 2,
-                m_hpSt, m_hpSx, m_hpSy, m_scrollMoveAccum, scrollPadSide());
+    // Both pads use the same metric (total 2D travel) and density, so the left
+    // and right feel identical, independent of the mouse/scroll output toggles.
+    moveTexture(mp, m_hpMt, m_hpMx, m_hpMy, m_moveAccum,       mousePadSide());
+    moveTexture(sp, m_hpSt, m_hpSx, m_hpSy, m_scrollMoveAccum, scrollPadSide());
 }

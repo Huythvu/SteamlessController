@@ -16,8 +16,7 @@ public:
     // Local trackpad haptics. The sink fires (side, amplitude, pulse count).
     void SetHapticSink(std::function<void(uint8_t, uint16_t, uint8_t)> sink) { m_haptic = std::move(sink); }
     void SetHapticOnClick(bool enabled)    { m_hapticOnClick = enabled; }
-    void SetHapticOnMove(bool enabled)     { m_hapticOnMove  = enabled; }   // mouse pad (all axes)
-    void SetScrollHapticMode(int mode)     { m_scrollHapticMode = mode; }   // 0 off, 1 all-axis, 2 vertical
+    void SetHapticOnMove(bool enabled)     { m_hapticOnMove  = enabled; }   // both pads (all axes)
     void SetClickHardness(int level)       { m_clickHardness = level < 1 ? 1 : (level > 3 ? 3 : level); }
     void SetMoveTickDistance(float dist)   { m_moveTickDistance = dist; }   // trackpad units / tick
     void SetMouseDeadzone(int dz)          { m_mouseDeadzone  = dz; }       // per-frame units
@@ -47,11 +46,13 @@ private:
     float    m_accumX     = 0.0f;   // carry sub-pixel movement between frames
     float    m_accumY     = 0.0f;
 
-    // Scroll-wheel state
+    // Scroll-wheel state (vertical + horizontal)
     bool     m_scrollTouching = false;
     bool     m_scrollPrevClick = false;
     int16_t  m_scrollPrevY    = 0;
-    float    m_scrollAccum    = 0.0f;
+    int16_t  m_scrollPrevX    = 0;
+    float    m_scrollAccum    = 0.0f;    // fractional vertical wheel carry
+    float    m_scrollAccumX   = 0.0f;    // fractional horizontal wheel carry
     float    m_scrollMoveAccum = 0.0f;   // distance since last scroll haptic tick
 
     // Click haptic edge state
@@ -67,8 +68,7 @@ private:
     // Haptics
     std::function<void(uint8_t, uint16_t, uint8_t)> m_haptic;
     bool     m_hapticOnClick    = false;
-    bool     m_hapticOnMove     = false;     // mouse-pad movement texture (all axes)
-    int      m_scrollHapticMode = 0;         // scroll pad: 0 off, 1 all-axis, 2 vertical-only
+    bool     m_hapticOnMove     = false;     // movement texture, both pads (all axes)
     int      m_clickHardness    = 2;         // 1=soft, 2=medium, 3=hard
     float    m_moveTickDistance = 3000.0f;   // smaller = more ticks per movement
     float    m_moveAccum        = 0.0f;      // distance since last move tick
