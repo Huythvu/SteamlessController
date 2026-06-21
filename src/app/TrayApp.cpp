@@ -521,6 +521,18 @@ void TrayApp::DrawTabs() {
                &ControllerManager::SetTrackpadSensitivity);
         slider("Mouse deadzone (0 = off)", c.GetMouseDeadzone(), 0, 100,
                &ControllerManager::SetMouseDeadzone);
+
+        // Smart deadzone: smooth/gliding response instead of a hard cutoff.
+        toggle("Smart deadzone (smooth gliding)", c.IsSmartDeadzone(),
+               &ControllerManager::SetSmartDeadzone);
+        ImGui::BeginDisabled(!c.IsSmartDeadzone());
+        slider("  Response curve", c.GetSmartCurve(), 1, 100,
+               &ControllerManager::SetSmartCurve);
+        slider("  Smoothing", c.GetSmartSmoothing(), 1, 100,
+               &ControllerManager::SetSmartSmoothing);
+        slider("  Acceleration", c.GetSmartAccel(), 1, 100,
+               &ControllerManager::SetSmartAccel);
+        ImGui::EndDisabled();
         ImGui::EndDisabled();
 
         ImGui::Spacing();
@@ -1124,6 +1136,10 @@ void TrayApp::LoadProfileSettings(HKEY key) {
     m_controller->SetScrollSensitivity   (static_cast<int>(rd(L"ScrollSensitivity",   30)));
     m_controller->SetMouseDeadzone       (static_cast<int>(rd(L"MouseDeadzonePos",     50)));
     m_controller->SetScrollDeadzone      (static_cast<int>(rd(L"ScrollDeadzonePos",    50)));
+    m_controller->SetSmartDeadzone       (rb(L"SmartDeadzone", false));
+    m_controller->SetSmartCurve          (static_cast<int>(rd(L"SmartCurve",     50)));
+    m_controller->SetSmartSmoothing      (static_cast<int>(rd(L"SmartSmoothing", 40)));
+    m_controller->SetSmartAccel          (static_cast<int>(rd(L"SmartAccel",     25)));
     m_controller->SetLeftDeadzone        (static_cast<int>(rd(L"LeftDeadzone",         10)));
     m_controller->SetRightDeadzone       (static_cast<int>(rd(L"RightDeadzone",        10)));
     m_controller->SetLeftStickSensitivity (static_cast<int>(rd(L"LeftStickSens",       50)));
@@ -1166,6 +1182,10 @@ void TrayApp::SaveProfileSettings(HKEY key) {
     wd(L"ScrollSensitivity",   static_cast<DWORD>(m_controller->GetScrollSensitivity()));
     wd(L"MouseDeadzonePos",    static_cast<DWORD>(m_controller->GetMouseDeadzone()));
     wd(L"ScrollDeadzonePos",   static_cast<DWORD>(m_controller->GetScrollDeadzone()));
+    wb(L"SmartDeadzone",       m_controller->IsSmartDeadzone());
+    wd(L"SmartCurve",          static_cast<DWORD>(m_controller->GetSmartCurve()));
+    wd(L"SmartSmoothing",      static_cast<DWORD>(m_controller->GetSmartSmoothing()));
+    wd(L"SmartAccel",          static_cast<DWORD>(m_controller->GetSmartAccel()));
     wd(L"LeftDeadzone",        static_cast<DWORD>(m_controller->GetLeftDeadzone()));
     wd(L"RightDeadzone",       static_cast<DWORD>(m_controller->GetRightDeadzone()));
     wd(L"LeftStickSens",       static_cast<DWORD>(m_controller->GetLeftStickSensitivity()));

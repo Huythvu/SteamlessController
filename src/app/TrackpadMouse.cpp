@@ -2,6 +2,7 @@
 #include "steam/SteamController.h"
 #include <Windows.h>
 #include <cstring>
+#include <cmath>
 
 static constexpr uint8_t BTN_TP_RT_CLICK = 0x40;  // buf[4] bit 6 — right pad hard press
 
@@ -63,29 +64,57 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
             const int adx   = rawdx < 0 ? -rawdx : rawdx;
             const int ady   = rawdy < 0 ? -rawdy : rawdy;
             m_lastMouseMove.store(adx + ady);   // publish for the live view
-            // Deadzone: ignore movement below the threshold (resting jitter).
-            if (adx + ady > m_mouseDeadzone) {
-                // Accumulate fractional movement so slow motion isn't lost to
-                // truncation (a single frame's delta * sensitivity can be < 1px).
-                const float fdx =  rawdx * m_sensitivity + m_accumX;
-                const float fdy = -rawdy * m_sensitivity + m_accumY;  // up = up
-                const int   idx = static_cast<int>(fdx);
-                const int   idy = static_cast<int>(fdy);
-                m_accumX = fdx - idx;
-                m_accumY = fdy - idy;
-                if (idx != 0 || idy != 0) {
-                    INPUT input{};
-                    input.type       = INPUT_MOUSE;
-                    input.mi.dwFlags = MOUSEEVENTF_MOVE;
-                    input.mi.dx      = idx;
-                    input.mi.dy      = idy;
-                    SendInput(1, &input, sizeof(INPUT));
+
+            float fdx = 0.0f, fdy = 0.0f;       // pixels to move this frame
+            if (m_smartDeadzone) {
+                // Anti-jitter radial deadzone -> soft curve -> accel -> smoothing.
+                const float mag = std::sqrt(static_cast<float>(rawdx) * rawdx +
+                                            static_cast<float>(rawdy) * rawdy);
+                const float dz  = static_cast<float>(m_mouseDeadzone);
+                float targetX = 0.0f, targetY = 0.0f;
+                if (mag > dz) {
+                    float t = (mag - dz) / (kSmartMaxInput - dz);   // remap from 0 (no jump)
+                    if (t > 1.0f) t = 1.0f;
+                    const float shaped = std::pow(t, m_smartCurve); // gentle small moves
+                    float speed = shaped * kSmartMaxInput * m_sensitivity;
+                    if (m_smartAccel > 0.0f) speed *= 1.0f + m_smartAccel * t;
+                    const float inv = 1.0f / mag;
+                    targetX =  rawdx * inv * speed;
+                    targetY = -rawdy * inv * speed;             // up = up
                 }
+                // Glide toward the target instead of snapping (smoothing).
+                const float follow = 1.0f - m_smartSmoothing;
+                m_smoothX += (targetX - m_smoothX) * follow;
+                m_smoothY += (targetY - m_smoothY) * follow;
+                fdx = m_smoothX + m_accumX;
+                fdy = m_smoothY + m_accumY;
+            } else if (adx + ady > m_mouseDeadzone) {
+                // Hard deadzone + linear response (original behaviour).
+                fdx =  rawdx * m_sensitivity + m_accumX;
+                fdy = -rawdy * m_sensitivity + m_accumY;        // up = up
+            } else {
+                fdx = m_accumX;
+                fdy = m_accumY;
+            }
+
+            // Accumulate fractional movement so slow motion isn't lost to
+            // truncation (a single frame's delta can round to < 1px).
+            const int idx = static_cast<int>(fdx);
+            const int idy = static_cast<int>(fdy);
+            m_accumX = fdx - idx;
+            m_accumY = fdy - idy;
+            if (idx != 0 || idy != 0) {
+                INPUT input{};
+                input.type       = INPUT_MOUSE;
+                input.mi.dwFlags = MOUSEEVENTF_MOVE;
+                input.mi.dx      = idx;
+                input.mi.dy      = idy;
+                SendInput(1, &input, sizeof(INPUT));
             }
         }
 
         if (pad.touching) { m_prevX = pad.x; m_prevY = pad.y; }
-        else { m_accumX = m_accumY = 0.0f; m_lastMouseMove.store(0); }
+        else { m_accumX = m_accumY = 0.0f; m_smoothX = m_smoothY = 0.0f; m_lastMouseMove.store(0); }
         m_touching = pad.touching;
     }
 
