@@ -29,6 +29,9 @@ public:
     void MovePointer(int side, float dnx, float dny);
     // Type the highlighted key for one side into the focused application.
     void Commit(int side);
+    // Inject a single virtual-key press (used by the remappable Space /
+    // Backspace / Enter shortcut buttons).
+    void SendKey(WORD vk);
     HWND Hwnd() const { return m_hwnd; }
 
 private:
@@ -51,7 +54,7 @@ private:
     int               m_selR    = -1;   // right pad's highlighted key
     float             m_cx[2]   = { 0.25f, 0.75f };  // pointer position per side
     float             m_cy[2]   = { 0.5f,  0.5f  };
-    int               m_w       = 820;
-    int               m_h       = 320;
+    int               m_w       = 920;
+    int               m_h       = 340;
     std::vector<Key>  m_keys;
 };

@@ -17,48 +17,89 @@ bool KeyboardOverlay::Init(HINSTANCE hInstance) {
 }
 
 // Build the key grid and pre-compute each key's pixel rectangle so painting and
-// hit-testing share the same geometry.
+// hit-testing share the same geometry. The rows are staggered and the special
+// keys are wider, for a more ISO-keyboard look.
 void KeyboardOverlay::BuildLayout() {
     m_keys.clear();
-    struct Cell { std::wstring label; wchar_t ch; WORD vk; };
-    std::vector<std::vector<Cell>> rows;
+    struct Cell { std::wstring label; wchar_t ch; WORD vk; float w; };
+    struct Row  { float offset; std::vector<Cell> cells; };  // offset/widths in key units
+    std::vector<Row> rows;
 
-    auto rowFromChars = [](const wchar_t* s) {
-        std::vector<Cell> r;
-        for (const wchar_t* p = s; *p; ++p) r.push_back({ std::wstring(1, *p), *p, 0 });
-        return r;
+    auto ch = [](wchar_t c, float w = 1.0f) -> Cell {
+        return { std::wstring(1, c), c, 0, w };
+    };
+    auto chars = [&](const wchar_t* s, std::vector<Cell>& out) {
+        for (const wchar_t* p = s; *p; ++p) out.push_back(ch(*p));
     };
 
-    rows.push_back(rowFromChars(L"1234567890"));
-    rows.push_back(rowFromChars(L"qwertyuiop"));
+    // Row 0: number row + Backspace.
     {
-        auto r = rowFromChars(L"asdfghjkl");
-        r.push_back({ L"<-", 0, VK_BACK });
-        rows.push_back(r);
+        Row r; r.offset = 0.0f;
+        chars(L"1234567890", r.cells);
+        r.cells.push_back(ch(L'-')); r.cells.push_back(ch(L'='));
+        r.cells.push_back({ L"<-", 0, VK_BACK, 2.0f });
+        rows.push_back(std::move(r));
     }
+    // Row 1: QWERTY, slight stagger.
     {
-        auto r = rowFromChars(L"zxcvbnm,.");
-        r.push_back({ L"Enter", 0, VK_RETURN });
-        rows.push_back(r);
+        Row r; r.offset = 0.5f;
+        chars(L"qwertyuiop", r.cells);
+        r.cells.push_back(ch(L'[')); r.cells.push_back(ch(L']'));
+        rows.push_back(std::move(r));
     }
-    rows.push_back({ { L"Space", L' ', 0 } });
+    // Row 2: home row + Enter (wide).
+    {
+        Row r; r.offset = 0.75f;
+        chars(L"asdfghjkl", r.cells);
+        r.cells.push_back(ch(L';')); r.cells.push_back(ch(L'\''));
+        r.cells.push_back({ L"Enter", 0, VK_RETURN, 2.25f });
+        rows.push_back(std::move(r));
+    }
+    // Row 3: bottom row.
+    {
+        Row r; r.offset = 1.25f;
+        chars(L"zxcvbnm", r.cells);
+        r.cells.push_back(ch(L',')); r.cells.push_back(ch(L'.')); r.cells.push_back(ch(L'/'));
+        rows.push_back(std::move(r));
+    }
+    // Row 4: space bar, centred.
+    {
+        Row r; r.offset = 3.5f;
+        r.cells.push_back({ L"Space", L' ', 0, 8.0f });
+        rows.push_back(std::move(r));
+    }
+
+    // The widest row defines the key unit so every row shares one scale.
+    float maxUnits = 0.0f;
+    for (const Row& r : rows) {
+        float u = r.offset;
+        for (const Cell& c : r.cells) u += c.w;
+        if (u > maxUnits) maxUnits = u;
+    }
+    const float unit = static_cast<float>(m_w) / maxUnits;
 
     const int nRows = static_cast<int>(rows.size());
     const int rowH  = m_h / nRows;
     for (int ri = 0; ri < nRows; ++ri) {
-        const int n    = static_cast<int>(rows[ri].size());
-        const int keyW = m_w / n;
-        for (int ci = 0; ci < n; ++ci) {
+        float x = rows[ri].offset * unit;
+        for (const Cell& c : rows[ri].cells) {
+            const float w = c.w * unit;
             Key k;
-            k.rc    = { ci * keyW, ri * rowH,
-                        (ci == n - 1) ? m_w : (ci + 1) * keyW,
+            k.rc    = { static_cast<int>(x), ri * rowH,
+                        static_cast<int>(x + w),
                         (ri == nRows - 1) ? m_h : (ri + 1) * rowH };
-            k.label = rows[ri][ci].label;
-            k.ch    = rows[ri][ci].ch;
-            k.vk    = rows[ri][ci].vk;
+            k.label = c.label;
+            k.ch    = c.ch;
+            k.vk    = c.vk;
             m_keys.push_back(std::move(k));
+            x += w;
         }
     }
+}
+
+void KeyboardOverlay::SendKey(WORD vk) {
+    Key k{}; k.vk = vk;
+    TypeKey(k);
 }
 
 void KeyboardOverlay::Show() {
@@ -138,11 +179,19 @@ void KeyboardOverlay::MovePointer(int side, float dnx, float dny) {
 int KeyboardOverlay::HitAt(float gridX, float ny) const {
     const int px = static_cast<int>(gridX * m_w);
     const int py = static_cast<int>(ny * m_h);
+    int  best = -1;
+    long bestD2 = 0;
     for (int i = 0; i < static_cast<int>(m_keys.size()); ++i) {
         const RECT& r = m_keys[i].rc;
         if (px >= r.left && px < r.right && py >= r.top && py < r.bottom) return i;
+        // Staggered rows leave gaps; snap to the nearest key so there are no
+        // dead zones. Distance from the point to the key rectangle.
+        const long dx = px < r.left ? r.left - px : (px >= r.right  ? px - r.right  + 1 : 0);
+        const long dy = py < r.top  ? r.top  - py : (py >= r.bottom ? py - r.bottom + 1 : 0);
+        const long d2 = dx * dx + dy * dy;
+        if (best < 0 || d2 < bestD2) { best = i; bestD2 = d2; }
     }
-    return -1;
+    return best;
 }
 
 void KeyboardOverlay::Commit(int side) {

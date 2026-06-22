@@ -382,6 +382,7 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             m_kbPrevActive[0] = m_kbPrevActive[1] = false;
             m_kbWasTouch[0] = m_kbWasTouch[1] = false;
             m_kbPrevSel[0] = m_kbPrevSel[1] = -1;
+            m_kbPrevShortcut[0] = m_kbPrevShortcut[1] = m_kbPrevShortcut[2] = false;
             SetTimer(m_hwnd, KB_TIMER, 16, nullptr);   // ~60 Hz poll
         } else if (!open && m_keyboard.IsVisible()) {
             m_keyboard.Hide();
@@ -679,17 +680,32 @@ void TrayApp::DrawTabs() {
     }
 
     if (ImGui::BeginTabItem("Keyboard")) {
-        // Apply a recorded source index to the field being bound.
+        // Read/write a keyboard binding by its target id.
+        auto kbGet = [&](int target) -> int {
+            switch (target) {
+                case 0: return c.GetKbOpenButton();
+                case 1: return c.GetKbOpenModifier();
+                case 2: return c.GetKbClickLeft();
+                case 3: return c.GetKbClickRight();
+                case 4: return c.GetKbKeyBackspace();
+                case 5: return c.GetKbKeySpace();
+                case 6: return c.GetKbKeyEnter();
+            }
+            return -1;
+        };
         auto kbSet = [&](int target, int v) {
             switch (target) {
-                case 0: c.SetKbOpenButton(v);   break;
-                case 1: c.SetKbOpenModifier(v); break;
-                case 2: c.SetKbClickLeft(v);    break;
-                case 3: c.SetKbClickRight(v);   break;
+                case 0: c.SetKbOpenButton(v);    break;
+                case 1: c.SetKbOpenModifier(v);  break;
+                case 2: c.SetKbClickLeft(v);     break;
+                case 3: c.SetKbClickRight(v);    break;
+                case 4: c.SetKbKeyBackspace(v);  break;
+                case 5: c.SetKbKeySpace(v);      break;
+                case 6: c.SetKbKeyEnter(v);      break;
             }
         };
 
-        // While a field is armed, the next physical button press fills it (the
+        // While a row is armed, the next physical button press fills it (the
         // same record-then-press flow as the controller remapping tab).
         if (m_kbRecordTarget >= 0) {
             uint8_t rep[64];
@@ -707,45 +723,56 @@ void TrayApp::DrawTabs() {
             }
         }
 
-        // A click-to-record button for one keyboard binding. Left-click arms it
-        // (then press a controller button); right-click clears it to None.
-        auto recordField = [&](const char* label, int target, int cur) {
-            ImGui::PushID(target);
-            const bool armed = (m_kbRecordTarget == target);
-            std::string name = cur < 0 ? "None" : Narrow(InputMapper::kSources[cur].name);
-            if (armed) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.95f, 0.80f, 0.20f, 1.0f));
-            if (ImGui::Button(armed ? "press a button..." : name.c_str(), ImVec2(190, 0)))
-                m_kbRecordTarget = armed ? -1 : target;
-            if (armed) ImGui::PopStyleColor();
-            if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
-                kbSet(target, -1); SaveSettings();
-                if (armed) m_kbRecordTarget = -1;
-            }
-            ImGui::SameLine(); ImGui::TextUnformatted(label);
-            ImGui::PopID();
+        struct KbBind { const char* name; int target; };
+        static const KbBind kBinds[] = {
+            { "Open keyboard", 0 }, { "Modifier",    1 },
+            { "Left click",    2 }, { "Right click", 3 },
+            { "Backspace",     4 }, { "Space",       5 }, { "Enter", 6 },
         };
 
-        ImGui::TextDisabled("Click a field, then press the controller button to bind it. Right-click clears it.");
-        ImGui::Spacing();
+        // --- left column: the binding list, controller-tab legend style ---
+        ImGui::BeginChild("kbremap", ImVec2(310, 320), true);
+        ImGui::TextDisabled("FUNCTION  ->  BUTTON");
+        ImGui::Separator();
+        for (const KbBind& b : kBinds) {
+            const int  cur   = kbGet(b.target);
+            const bool armed = (m_kbRecordTarget == b.target);
+            const char* val  = armed ? "press a button..."
+                             : (cur < 0 ? "None" : nullptr);
+            std::string name = (val == nullptr) ? Narrow(InputMapper::kSources[cur].name)
+                                                : std::string();
+            char row[96];
+            std::snprintf(row, sizeof(row), "%-13s %s##kb%d",
+                          b.name, val ? val : name.c_str(), b.target);
+            if (ImGui::Selectable(row, armed))
+                m_kbRecordTarget = armed ? -1 : b.target;
+            if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                kbSet(b.target, -1); SaveSettings();
+                if (armed) m_kbRecordTarget = -1;
+            }
+        }
+        ImGui::Separator();
+        ImGui::TextWrapped("Click a row, then press the controller button to bind it. "
+                           "Right-click a row to clear it.");
+        ImGui::EndChild();
 
+        // --- right column: the non-remap settings, with room to breathe ---
+        ImGui::SameLine();
+        ImGui::BeginChild("kbsettings", ImVec2(0, 320), true);
         ImGui::TextDisabled("OPEN / CLOSE");
-        recordField("Modifier (hold, optional)", 1, c.GetKbOpenModifier());
-        recordField("Open button",               0, c.GetKbOpenButton());
-        ImGui::TextDisabled("Clear the modifier for a single-button trigger.");
         bool hold = c.IsKbOpenHold();
         if (ImGui::RadioButton("Toggle on/off", !hold)) { c.SetKbOpenHold(false); SaveSettings(); }
         ImGui::SameLine();
         if (ImGui::RadioButton("Hold to keep open", hold)) { c.SetKbOpenHold(true); SaveSettings(); }
+        ImGui::TextDisabled("Clear the Modifier binding for a single-button trigger.");
 
         ImGui::Spacing(); ImGui::Separator();
-        ImGui::TextDisabled("TYPING / CLICK");
+        ImGui::TextDisabled("TYPING");
         bool usePad = c.IsKbUsePadClick();
         if (ImGui::Checkbox("Press the trackpad to type the key", &usePad)) {
             c.SetKbUsePadClick(usePad); SaveSettings();
         }
-        recordField("Left click button",  2, c.GetKbClickLeft());
-        recordField("Right click button", 3, c.GetKbClickRight());
-        ImGui::TextDisabled("Each pad's button types the key that pad is pointing at.");
+        ImGui::TextDisabled("Otherwise use the Left / Right click bindings.");
 
         ImGui::Spacing(); ImGui::Separator();
         ImGui::TextDisabled("LAYOUT");
@@ -761,6 +788,7 @@ void TrayApp::DrawTabs() {
         if (ImGui::Checkbox("Floating cursor (balls) instead of whole-key highlight", &ball)) {
             c.SetKbBall(ball); SaveSettings();
         }
+        ImGui::EndChild();
         ImGui::EndTabItem();
     } else {
         m_kbRecordTarget = -1;   // stop listening when the tab is not visible
@@ -1263,6 +1291,21 @@ void TrayApp::PollKeyboard() {
         }
         m_kbPrevActive[s] = active;
     }
+
+    // Remappable shortcut buttons type Backspace / Space / Enter directly, so
+    // you don't have to point at those keys. Fire on the rising edge.
+    const int  shortcutBtn[3] = { m_controller->GetKbKeyBackspace(),
+                                  m_controller->GetKbKeySpace(),
+                                  m_controller->GetKbKeyEnter() };
+    const WORD shortcutVk[3]  = { VK_BACK, VK_SPACE, VK_RETURN };
+    for (int i = 0; i < 3; ++i) {
+        const bool down = held(shortcutBtn[i]);
+        if (down && !m_kbPrevShortcut[i]) {
+            m_keyboard.SendKey(shortcutVk[i]);
+            m_controller->KeyboardHaptic(0);   // firm tick
+        }
+        m_kbPrevShortcut[i] = down;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1338,6 +1381,9 @@ void TrayApp::LoadProfileSettings(HKEY key) {
     m_controller->SetKbSplit              (rb(L"KbSplit",    true));
     m_controller->SetKbRelative           (rb(L"KbRelative", false));
     m_controller->SetKbBall               (rb(L"KbBall",     false));
+    m_controller->SetKbKeyBackspace       (static_cast<int>(rd(L"KbKeyBack",  0xFFFFFFFF)));
+    m_controller->SetKbKeySpace           (static_cast<int>(rd(L"KbKeySpace", 0xFFFFFFFF)));
+    m_controller->SetKbKeyEnter           (static_cast<int>(rd(L"KbKeyEnter", 0xFFFFFFFF)));
 
     m_controller->ResetButtonMappings();
     for (int i = 0; i < InputMapper::kSourceCount; ++i) {
@@ -1388,6 +1434,9 @@ void TrayApp::SaveProfileSettings(HKEY key) {
     wb(L"KbSplit",             m_controller->IsKbSplit());
     wb(L"KbRelative",          m_controller->IsKbRelative());
     wb(L"KbBall",              m_controller->IsKbBall());
+    wd(L"KbKeyBack",           static_cast<DWORD>(m_controller->GetKbKeyBackspace()));
+    wd(L"KbKeySpace",          static_cast<DWORD>(m_controller->GetKbKeySpace()));
+    wd(L"KbKeyEnter",          static_cast<DWORD>(m_controller->GetKbKeyEnter()));
 
     for (int i = 0; i < InputMapper::kSourceCount; ++i) {
         InputMapper::Action a = m_controller->GetButtonAction(i);

@@ -43,6 +43,9 @@ public:
     void SetKbSplit(bool b)       { m_kbSplit = b; }        bool IsKbSplit() const         { return m_kbSplit; }
     void SetKbRelative(bool b)    { m_kbRelative = b; }     bool IsKbRelative() const      { return m_kbRelative; }
     void SetKbBall(bool b)        { m_kbBall = b; }         bool IsKbBall() const          { return m_kbBall; }
+    void SetKbKeyBackspace(int i) { m_kbKeyBack = i; }      int  GetKbKeyBackspace() const { return m_kbKeyBack; }
+    void SetKbKeySpace(int i)     { m_kbKeySpace = i; }     int  GetKbKeySpace() const     { return m_kbKeySpace; }
+    void SetKbKeyEnter(int i)     { m_kbKeyEnter = i; }     int  GetKbKeyEnter() const     { return m_kbKeyEnter; }
 
     // Toggle game mode on/off. No-op if controller is not connected.
     void EnableGameMode();
@@ -143,6 +146,9 @@ private:
     bool                               m_kbSplit        = true;
     bool                               m_kbRelative     = false;
     bool                               m_kbBall         = false;
+    int                                m_kbKeyBack      = -1;   // shortcut: Backspace
+    int                                m_kbKeySpace     = -1;   // shortcut: Space
+    int                                m_kbKeyEnter     = -1;   // shortcut: Enter
     std::atomic<bool>                  m_connected{false};
     std::atomic<bool>                  m_gameModeActive{false};
     bool                               m_trackpadMouseEnabled = false;

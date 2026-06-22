@@ -376,6 +376,9 @@ void ControllerManager::ReadLoop() {
             clear(m_kbOpenModifier);
             clear(m_kbClickL);
             clear(m_kbClickR);
+            clear(m_kbKeyBack);
+            clear(m_kbKeySpace);
+            clear(m_kbKeyEnter);
             clear(19);   // Right Pad Click
             clear(20);   // Left Pad Click
             std::lock_guard<std::mutex> lock(m_inputMutex);
