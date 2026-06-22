@@ -89,6 +89,8 @@ private:
     float                              m_kbPrevNx[2]  = { 0.0f, 0.0f };        // relative mode
     float                              m_kbPrevNy[2]  = { 0.0f, 0.0f };
     bool                               m_kbWasTouch[2]= { false, false };
+    int                                m_kbPrevSel[2] = { -1, -1 };            // hover haptic edge
+    int                                m_kbRecordTarget = -1;                  // 0=open 1=mod 2=clickL 3=clickR
 
     // UI scratch state
     int                                m_currentTab = 0;

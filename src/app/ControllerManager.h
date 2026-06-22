@@ -31,7 +31,7 @@ public:
     // trackpad can drive the keyboard overlay instead.
     void SetKeyboardMode(bool on) { m_keyboardMode = on; }
     bool IsKeyboardMode() const   { return m_keyboardMode.load(); }
-    void KeyboardHaptic(uint8_t side);   // pulse on a key press (side 0=right,1=left)
+    void KeyboardHaptic(uint8_t side, uint16_t amp = 2000);   // pulse on a key press (side 0=right,1=left)
 
     // --- On-screen keyboard configuration (source indices into InputMapper) ---
     void SetKbOpenButton(int i)   { m_kbOpenButton = i; }   int  GetKbOpenButton() const   { return m_kbOpenButton; }
@@ -42,6 +42,7 @@ public:
     void SetKbUsePadClick(bool b) { m_kbUsePadClick = b; }  bool IsKbUsePadClick() const   { return m_kbUsePadClick; }
     void SetKbSplit(bool b)       { m_kbSplit = b; }        bool IsKbSplit() const         { return m_kbSplit; }
     void SetKbRelative(bool b)    { m_kbRelative = b; }     bool IsKbRelative() const      { return m_kbRelative; }
+    void SetKbBall(bool b)        { m_kbBall = b; }         bool IsKbBall() const          { return m_kbBall; }
 
     // Toggle game mode on/off. No-op if controller is not connected.
     void EnableGameMode();
@@ -141,6 +142,7 @@ private:
     bool                               m_kbUsePadClick  = true;
     bool                               m_kbSplit        = true;
     bool                               m_kbRelative     = false;
+    bool                               m_kbBall         = false;
     std::atomic<bool>                  m_connected{false};
     std::atomic<bool>                  m_gameModeActive{false};
     bool                               m_trackpadMouseEnabled = false;

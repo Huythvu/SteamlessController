@@ -122,6 +122,7 @@ void KeyboardOverlay::SetPointerAbs(int side, float nx, float ny) {
     m_cx[side] = lo + nx * (hi - lo);   // map pad position into the side's range
     m_cy[side] = ny;
     UpdateSel(side);
+    if (m_ball && m_hwnd) InvalidateRect(m_hwnd, nullptr, FALSE);  // ball moved
 }
 
 void KeyboardOverlay::MovePointer(int side, float dnx, float dny) {
@@ -131,6 +132,7 @@ void KeyboardOverlay::MovePointer(int side, float dnx, float dny) {
     m_cx[side] = cx < lo ? lo : (cx > hi ? hi : cx);
     m_cy[side] = cy < 0 ? 0 : (cy > 1 ? 1 : cy);
     UpdateSel(side);
+    if (m_ball && m_hwnd) InvalidateRect(m_hwnd, nullptr, FALSE);  // ball moved
 }
 
 int KeyboardOverlay::HitAt(float gridX, float ny) const {
@@ -186,18 +188,53 @@ void KeyboardOverlay::Paint(HDC hdc) {
     SetBkMode(mem, TRANSPARENT);
     SetTextColor(mem, RGB(235, 237, 240));
 
+    // In ball mode the keys stay neutral and a floating cursor marks the spot;
+    // the hovered key only gets a coloured outline. Otherwise we fill the whole
+    // hovered key as before.
     for (int i = 0; i < static_cast<int>(m_keys.size()); ++i) {
         RECT r = m_keys[i].rc;
         InflateRect(&r, -3, -3);
+        const bool selL = (i == m_selL), selR = (i == m_selR);
         HBRUSH b = keyBrush;
-        if (i == m_selL && i == m_selR) b = bothBrush;
-        else if (i == m_selL)           b = leftBrush;
-        else if (i == m_selR)           b = rightBrush;
+        if (!m_ball) {
+            if (selL && selR) b = bothBrush;
+            else if (selL)    b = leftBrush;
+            else if (selR)    b = rightBrush;
+        }
         HBRUSH ob = static_cast<HBRUSH>(SelectObject(mem, b));
         RoundRect(mem, r.left, r.top, r.right, r.bottom, 10, 10);
         SelectObject(mem, ob);
+        if (m_ball && (selL || selR)) {
+            COLORREF c = (selL && selR) ? RGB(150, 110, 230)
+                       : selL           ? RGB(60, 170, 90)
+                                        : RGB(60, 150, 240);
+            HPEN hp  = CreatePen(PS_SOLID, 3, c);
+            HPEN op  = static_cast<HPEN>(SelectObject(mem, hp));
+            HBRUSH hb = static_cast<HBRUSH>(SelectObject(mem, GetStockObject(HOLLOW_BRUSH)));
+            RoundRect(mem, r.left, r.top, r.right, r.bottom, 10, 10);
+            SelectObject(mem, hb);
+            SelectObject(mem, op);
+            DeleteObject(hp);
+        }
         DrawTextW(mem, m_keys[i].label.c_str(), -1, &r,
                   DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    }
+
+    // Floating cursors ("balls"), one per pad, at the continuous pointer spot.
+    if (m_ball) {
+        const int rad = 14;
+        HBRUSH ballBrush[2] = { leftBrush, rightBrush };
+        HPEN   ringPen = CreatePen(PS_SOLID, 2, RGB(235, 237, 240));
+        HPEN   op = static_cast<HPEN>(SelectObject(mem, ringPen));
+        for (int s = 0; s < 2; ++s) {
+            const int cx = static_cast<int>(m_cx[s] * m_w);
+            const int cy = static_cast<int>(m_cy[s] * m_h);
+            HBRUSH ob = static_cast<HBRUSH>(SelectObject(mem, ballBrush[s]));
+            Ellipse(mem, cx - rad, cy - rad, cx + rad, cy + rad);
+            SelectObject(mem, ob);
+        }
+        SelectObject(mem, op);
+        DeleteObject(ringPen);
     }
 
     BitBlt(hdc, 0, 0, m_w, m_h, mem, 0, 0, SRCCOPY);

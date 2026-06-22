@@ -18,6 +18,11 @@ public:
     // Each trackpad drives its own pointer. Split mode confines a pad to its
     // half of the board; otherwise each pad can reach the whole board.
     void SetSplit(bool split) { m_split = split; }
+    // Ball mode: draw a floating cursor per pad instead of filling the whole
+    // hovered key (Steam-style). Selection/typing is unchanged.
+    void SetBallMode(bool ball) { m_ball = ball; }
+    // The key index each side is currently pointing at (-1 = none).
+    int  Selected(int side) const { return side == 0 ? m_selL : m_selR; }
     // Absolute: the pad position maps straight to a board position.
     void SetPointerAbs(int side, float nx, float ny);
     // Relative: slide from anywhere; the pointer moves by the finger delta.
@@ -41,6 +46,7 @@ private:
     HWND              m_hwnd    = nullptr;
     bool              m_visible = false;
     bool              m_split   = true;
+    bool              m_ball    = false;  // draw floating cursors instead of key fills
     int               m_selL    = -1;   // left pad's highlighted key
     int               m_selR    = -1;   // right pad's highlighted key
     float             m_cx[2]   = { 0.25f, 0.75f };  // pointer position per side

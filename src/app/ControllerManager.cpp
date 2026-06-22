@@ -174,10 +174,11 @@ void ControllerManager::TestHaptic() {
     g_ctrl->RumbleHaptic(1, 0xFD);
 }
 
-void ControllerManager::KeyboardHaptic(uint8_t side) {
-    // A single firm pulse on the pad that pressed (fired on both press and
-    // release for a two-way click). Safe from any thread, like TestHaptic.
-    if (g_ctrl && m_connected.load()) g_ctrl->TrackpadHaptic(side, 2000, 1);
+void ControllerManager::KeyboardHaptic(uint8_t side, uint16_t amp) {
+    // A single pulse on the pad in use. Fired firm on press/release (default
+    // amplitude) and lighter when the cursor first crosses onto a new key.
+    // Safe from any thread, like TestHaptic.
+    if (g_ctrl && m_connected.load()) g_ctrl->TrackpadHaptic(side, amp, 1);
 }
 
 void ControllerManager::SuspendTrackpad(bool suspended) {
