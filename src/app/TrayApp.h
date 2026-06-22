@@ -41,6 +41,7 @@ private:
     void DrawTrackpadView(const char* label, bool touch, bool click,
                           float nx, float ny, float velFrac);
     void DrawKeyboardPreview(float availW, float availH);   // live view of the on-screen keyboard
+    void UpdateKeyboardPreviewInput();   // drive the preview from the pads (visual only)
 
     // --- Tray ---
     void AddTrayIcon();

@@ -20,15 +20,15 @@ bool KeyboardOverlay::Init(HINSTANCE hInstance) {
 // hit-testing share the same geometry. Both layouts fill the board.
 void KeyboardOverlay::BuildLayout() {
     m_keys.clear();
-    struct Cell { std::wstring label; wchar_t ch; WORD vk; float w; int mod; int span; };
+    struct Cell { std::wstring label; wchar_t ch; WORD vk; float w; int mod; int span; bool lshape; };
     struct Row  { float offset; std::vector<Cell> cells; };  // offset/widths in key units
     std::vector<Row> rows;
 
-    auto C     = [](wchar_t c, float w = 1.0f) -> Cell { return { std::wstring(1, c), c, 0, w, 0, 1 }; };
-    auto Sp    = [](const wchar_t* l, WORD vk, float w) -> Cell { return { l, 0, vk, w, 0, 1 }; };
-    auto Mod   = [](const wchar_t* l, int mod, float w) -> Cell { return { l, 0, 0, w, mod, 1 }; };
-    auto chars = [&](const wchar_t* s, std::vector<Cell>& out) {
-        for (const wchar_t* p = s; *p; ++p) out.push_back(C(*p));
+    auto C     = [](wchar_t c, float w = 1.0f) -> Cell { return { std::wstring(1, c), c, 0, w, 0, 1, false }; };
+    auto Sp    = [](const wchar_t* l, WORD vk, float w) -> Cell { return { l, 0, vk, w, 0, 1, false }; };
+    auto Mod   = [](const wchar_t* l, int mod, float w) -> Cell { return { l, 0, 0, w, mod, 1, false }; };
+    auto chars = [&](const wchar_t* s, std::vector<Cell>& out, float w = 1.0f) {
+        for (const wchar_t* p = s; *p; ++p) out.push_back({ std::wstring(1, *p), *p, 0, w, 0, 1, false });
     };
 
     if (m_layout == Simple) {
@@ -39,18 +39,23 @@ void KeyboardOverlay::BuildLayout() {
         { Row r{0.0f,{}}; chars(L"zxcvbnm,.", r.cells); r.cells.push_back(Sp(L"Enter", VK_RETURN, 1.0f)); rows.push_back(std::move(r)); }
         { Row r{0.0f,{}}; r.cells.push_back(Sp(L"Space", VK_SPACE, 10.0f)); rows.push_back(std::move(r)); }
     } else {
-        // ISO-style: staggered with modifier keys filling the offsets, a tall
-        // L-style Enter, and no symbol cluster to the right of p / l / m.
+        // ISO-style: staggered, with an L-shaped Enter (narrow top bar on the
+        // qwerty row over a wider base on the home row) and no symbol cluster to
+        // the right of p / l / m. 15 units per row.
         { Row r{0.0f,{}}; r.cells.push_back(C(L'`'));
           chars(L"1234567890", r.cells);
           r.cells.push_back(C(L'-')); r.cells.push_back(C(L'='));
           r.cells.push_back(Sp(L"<-", VK_BACK, 2.0f)); rows.push_back(std::move(r)); }
+        // Enter: a real ISO shape -- a narrow top bar (13.5 -> 15) on the qwerty
+        // row over a wider base on the home row. The qwerty letters widen to end
+        // at 13.5; the base (stem) is attached after layout.
         { Row r{0.0f,{}}; r.cells.push_back(Sp(L"Tab", VK_TAB, 1.5f));
-          chars(L"qwertyuiop", r.cells);
-          r.cells.push_back({ L"Enter", 0, VK_RETURN, 3.5f, 0, 2 });   // tall, spans 2 rows
+          chars(L"qwertyuiop", r.cells, 1.2f);
+          r.cells.push_back({ L"Enter", 0, VK_RETURN, 1.5f, 0, 1, true });
           rows.push_back(std::move(r)); }
-        { Row r{0.0f,{}}; r.cells.push_back(Mod(L"Caps", 2, 2.5f));
-          chars(L"asdfghjkl", r.cells); rows.push_back(std::move(r)); }
+        // Home row letters end at 12.0; the Enter base fills 12.0 -> 15.
+        { Row r{0.0f,{}}; r.cells.push_back(Mod(L"Caps", 2, 1.75f));
+          chars(L"asdfghjkl", r.cells, 10.25f / 9.0f); rows.push_back(std::move(r)); }
         { Row r{0.0f,{}}; r.cells.push_back(Mod(L"Shift", 1, 4.0f));
           chars(L"zxcvbnm", r.cells);
           r.cells.push_back(Mod(L"Shift", 1, 4.0f)); rows.push_back(std::move(r)); }
@@ -82,13 +87,20 @@ void KeyboardOverlay::BuildLayout() {
             const int botRow = ri + c.span - 1;
             int right = static_cast<int>(x + w);
             if (m_w - right <= 2) right = m_w;   // close the rounding gap at the edge
-            Key k;
-            k.rc    = { static_cast<int>(x), ri * rowH, right,
-                        (botRow >= nRows - 1) ? m_h : (botRow + 1) * rowH };
-            k.label = c.label;
-            k.ch    = c.ch;
-            k.vk    = c.vk;
-            k.mod   = c.mod;
+            Key k{};
+            k.rc     = { static_cast<int>(x), ri * rowH, right,
+                         (botRow >= nRows - 1) ? m_h : (botRow + 1) * rowH };
+            k.label  = c.label;
+            k.ch     = c.ch;
+            k.vk     = c.vk;
+            k.mod    = c.mod;
+            k.lshape = c.lshape;
+            if (c.lshape) {
+                // Enter base: the wider lower part on the next row, extending
+                // left (to 12.0u) past the narrow top bar for the ISO notch.
+                k.stem = { static_cast<int>(12.0f * unit), (ri + 1) * rowH,
+                           m_w, (ri + 2 >= nRows) ? m_h : (ri + 2) * rowH };
+            }
             m_keys.push_back(std::move(k));
             x += w;
         }
@@ -191,16 +203,23 @@ void KeyboardOverlay::MovePointer(int side, float dnx, float dny) {
 int KeyboardOverlay::HitAt(float gridX, float ny) const {
     const int px = static_cast<int>(gridX * m_w);
     const int py = static_cast<int>(ny * m_h);
+    auto inside = [&](const RECT& r) {
+        return px >= r.left && px < r.right && py >= r.top && py < r.bottom;
+    };
+    auto dist2 = [&](const RECT& r) -> long {
+        const long dx = px < r.left ? r.left - px : (px >= r.right  ? px - r.right  + 1 : 0);
+        const long dy = py < r.top  ? r.top  - py : (py >= r.bottom ? py - r.bottom + 1 : 0);
+        return dx * dx + dy * dy;
+    };
     int  best = -1;
     long bestD2 = 0;
     for (int i = 0; i < static_cast<int>(m_keys.size()); ++i) {
-        const RECT& r = m_keys[i].rc;
-        if (px >= r.left && px < r.right && py >= r.top && py < r.bottom) return i;
+        const Key& k = m_keys[i];
+        if (inside(k.rc) || (k.lshape && inside(k.stem))) return i;
         // Staggered rows leave gaps; snap to the nearest key so there are no
-        // dead zones. Distance from the point to the key rectangle.
-        const long dx = px < r.left ? r.left - px : (px >= r.right  ? px - r.right  + 1 : 0);
-        const long dy = py < r.top  ? r.top  - py : (py >= r.bottom ? py - r.bottom + 1 : 0);
-        const long d2 = dx * dx + dy * dy;
+        // dead zones. Distance from the point to the key region.
+        long d2 = dist2(k.rc);
+        if (k.lshape) { const long ds = dist2(k.stem); if (ds < d2) d2 = ds; }
         if (best < 0 || d2 < bestD2) { best = i; bestD2 = d2; }
     }
     return best;
@@ -284,6 +303,16 @@ void KeyboardOverlay::KeyRect(int i, float& l, float& t, float& r, float& b) con
     b = rc.bottom / static_cast<float>(m_h);
 }
 
+bool KeyboardOverlay::KeyStem(int i, float& l, float& t, float& r, float& b) const {
+    if (i < 0 || i >= static_cast<int>(m_keys.size()) || !m_keys[i].lshape) return false;
+    const RECT& rc = m_keys[i].stem;
+    l = rc.left   / static_cast<float>(m_w);
+    t = rc.top    / static_cast<float>(m_h);
+    r = rc.right  / static_cast<float>(m_w);
+    b = rc.bottom / static_cast<float>(m_h);
+    return true;
+}
+
 std::string KeyboardOverlay::KeyLabel(int i) const {
     const std::wstring w = DisplayLabel(i);
     if (w.empty()) return {};
@@ -331,6 +360,26 @@ void KeyboardOverlay::Paint(HDC hdc) {
             else              b = rightBrush;
         } else if (IsModActive(i)) {
             b = modBrush;
+        }
+        if (m_keys[i].lshape) {
+            // Draw the ISO Enter as a single L-shaped polygon (top bar + stem).
+            const RECT& tb = m_keys[i].rc;
+            const RECT& st = m_keys[i].stem;
+            POINT pts[6] = {
+                { tb.left + 3,  tb.top + 3 },
+                { tb.right - 3, tb.top + 3 },
+                { st.right - 3, st.bottom - 3 },
+                { st.left + 3,  st.bottom - 3 },
+                { st.left + 3,  tb.bottom - 3 },
+                { tb.left + 3,  tb.bottom - 3 },
+            };
+            HBRUSH lob = static_cast<HBRUSH>(SelectObject(mem, b));
+            Polygon(mem, pts, 6);
+            SelectObject(mem, lob);
+            RECT lr = tb; InflateRect(&lr, -3, -3);
+            const std::wstring elbl = DisplayLabel(i);
+            DrawTextW(mem, elbl.c_str(), -1, &lr, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            continue;
         }
         HBRUSH ob = static_cast<HBRUSH>(SelectObject(mem, b));
         RoundRect(mem, r.left, r.top, r.right, r.bottom, 10, 10);

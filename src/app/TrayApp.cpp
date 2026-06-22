@@ -731,8 +731,13 @@ void TrayApp::DrawTabs() {
             { "Backspace",     4 }, { "Space",       5 }, { "Enter", 6 },
         };
 
+        // Keep the preview live even when the keyboard overlay is closed.
+        UpdateKeyboardPreviewInput();
+
         const ImVec2 avail = ImGui::GetContentRegionAvail();
-        const float  leftW = avail.x * 0.5f;
+        const float  rightW = 196.0f;                  // the remap list is compact
+        float leftW = avail.x - rightW - ImGui::GetStyle().ItemSpacing.x;
+        if (leftW < 260.0f) leftW = avail.x * 0.6f;    // narrow-window fallback
 
         // --- left column: settings + a live preview, filling the height ---
         ImGui::BeginChild("kbleft", ImVec2(leftW, avail.y), true);
@@ -741,7 +746,6 @@ void TrayApp::DrawTabs() {
         if (ImGui::RadioButton("Toggle on/off", !hold)) { c.SetKbOpenHold(false); SaveSettings(); }
         ImGui::SameLine();
         if (ImGui::RadioButton("Hold to keep open", hold)) { c.SetKbOpenHold(true); SaveSettings(); }
-        ImGui::TextDisabled("Clear the Modifier binding for a single-button trigger.");
 
         ImGui::Spacing(); ImGui::Separator();
         ImGui::TextDisabled("TYPING");
@@ -754,7 +758,7 @@ void TrayApp::DrawTabs() {
         ImGui::TextDisabled("LAYOUT");
         const char* layoutNames[] = { "Simple", "ISO" };
         int lay = c.GetKbLayout(); if (lay < 0 || lay > 1) lay = 1;
-        ImGui::SetNextItemWidth(160);
+        ImGui::SetNextItemWidth(140);
         if (ImGui::Combo("Style", &lay, layoutNames, 2)) {
             c.SetKbLayout(lay); m_keyboard.SetLayout(lay); SaveSettings();
         }
@@ -762,13 +766,20 @@ void TrayApp::DrawTabs() {
         if (ImGui::Checkbox("Split: each pad controls its half", &split)) {
             c.SetKbSplit(split); SaveSettings();
         }
+        bool ball = c.IsKbBall();
+        if (ImGui::Checkbox("Floating cursor (balls)", &ball)) {
+            c.SetKbBall(ball); SaveSettings();
+        }
         bool rel = c.IsKbRelative();
         if (ImGui::Checkbox("Slide to move (relative)", &rel)) {
             c.SetKbRelative(rel); SaveSettings();
         }
-        bool ball = c.IsKbBall();
-        if (ImGui::Checkbox("Floating cursor (balls)", &ball)) {
-            c.SetKbBall(ball); SaveSettings();
+        if (rel) {
+            int rs = c.GetKbRelSens();
+            ImGui::SetNextItemWidth(140);
+            if (ImGui::SliderInt("Slide speed", &rs, 1, 100)) {
+                c.SetKbRelSens(rs); SaveSettings();
+            }
         }
 
         ImGui::Spacing(); ImGui::Separator();
@@ -777,10 +788,11 @@ void TrayApp::DrawTabs() {
         DrawKeyboardPreview(pv.x, pv.y);   // keyboard-shaped, fits the remaining space
         ImGui::EndChild();
 
-        // --- right column: the remapping list (controller-tab legend style) ---
+        // --- right column: the compact remapping list (sized to content) ---
         ImGui::SameLine();
-        ImGui::BeginChild("kbremap", ImVec2(0, avail.y), true);
-        ImGui::TextDisabled("FUNCTION  ->  BUTTON");
+        const float remapH = 10.0f * ImGui::GetTextLineHeightWithSpacing() + 16.0f;
+        ImGui::BeginChild("kbremap", ImVec2(0, remapH < avail.y ? remapH : avail.y), true);
+        ImGui::TextDisabled("FUNCTION -> BUTTON");
         ImGui::Separator();
         for (const KbBind& b : kBinds) {
             const int  cur   = kbGet(b.target);
@@ -790,7 +802,7 @@ void TrayApp::DrawTabs() {
             std::string name = (val == nullptr) ? Narrow(InputMapper::kSources[cur].name)
                                                 : std::string();
             char row[96];
-            std::snprintf(row, sizeof(row), "%-13s %s##kb%d",
+            std::snprintf(row, sizeof(row), "%-11s %s##kb%d",
                           b.name, val ? val : name.c_str(), b.target);
             if (ImGui::Selectable(row, armed))
                 m_kbRecordTarget = armed ? -1 : b.target;
@@ -1178,6 +1190,13 @@ void TrayApp::DrawKeyboardPreview(float availW, float availH) {
         else if (m_keyboard.IsModActive(i))fill = IM_COL32(200, 160, 40, 255);
         dl->AddRectFilled(a, q, fill, 3.0f);
         dl->AddRect(a, q, IM_COL32(80, 84, 92, 255), 3.0f);
+        float sl, st, sr, sb;
+        if (m_keyboard.KeyStem(i, sl, st, sr, sb)) {   // L-shaped Enter: draw the stem too
+            ImVec2 sa(o.x + sl * w + 1, o.y + st * h + 1);
+            ImVec2 sq(o.x + sr * w - 1, o.y + sb * h - 1);
+            dl->AddRectFilled(sa, sq, fill, 3.0f);
+            dl->AddRect(sa, sq, IM_COL32(80, 84, 92, 255), 3.0f);
+        }
         const std::string lbl = m_keyboard.KeyLabel(i);
         if (!lbl.empty()) {
             ImVec2 ts = ImGui::CalcTextSize(lbl.c_str());
@@ -1195,6 +1214,46 @@ void TrayApp::DrawKeyboardPreview(float availW, float availH) {
             dl->AddCircleFilled(c, rad, bc[s]);
             dl->AddCircle(c, rad, IM_COL32(235, 237, 240, 255), 16, 2.0f);
         }
+    }
+}
+
+// Move the preview's cursors from the live trackpad positions while the
+// keyboard overlay is NOT open. Purely visual: it never types or moves the
+// mouse and does not enter keyboard mode, so normal controls keep working.
+void TrayApp::UpdateKeyboardPreviewInput() {
+    if (m_keyboard.IsVisible()) return;   // PollKeyboard already drives it when open
+    uint8_t rep[64];
+    size_t n = m_controller->GetLatestReport(rep, sizeof(rep));
+    if (n < 30) return;
+
+    m_keyboard.SetSplit(m_controller->IsKbSplit());
+    m_keyboard.SetBallMode(m_controller->IsKbBall());
+    const bool  relative = m_controller->IsKbRelative();
+    const float relMul   = (m_controller->GetKbRelSens() / 50.0f) * 1.4f;
+
+    auto pad = [&](int xi, int yi) {
+        int16_t x, y;
+        std::memcpy(&x, rep + xi, 2);
+        std::memcpy(&y, rep + yi, 2);
+        float nx = (static_cast<float>(x) + 32767.0f) / 65534.0f;
+        float ny = (32767.0f - static_cast<float>(y)) / 65534.0f;
+        return std::pair<float, float>(nx, ny);
+    };
+    const bool touch[2] = { (rep[5] & 0x02) != 0, (rep[4] & 0x20) != 0 };
+    const int  xi[2] = { 18, 24 }, yi[2] = { 20, 26 };
+    for (int s = 0; s < 2; ++s) {
+        if (touch[s]) {
+            auto p = pad(xi[s], yi[s]);
+            if (relative) {
+                if (m_kbWasTouch[s])
+                    m_keyboard.MovePointer(s, (p.first - m_kbPrevNx[s]) * relMul,
+                                              (p.second - m_kbPrevNy[s]) * relMul);
+                m_kbPrevNx[s] = p.first; m_kbPrevNy[s] = p.second;
+            } else {
+                m_keyboard.SetPointerAbs(s, p.first, p.second);
+            }
+        }
+        m_kbWasTouch[s] = touch[s];
     }
 }
 
@@ -1288,7 +1347,8 @@ void TrayApp::PollKeyboard() {
 
     m_keyboard.SetSplit(m_controller->IsKbSplit());
     m_keyboard.SetBallMode(m_controller->IsKbBall());
-    const bool relative = m_controller->IsKbRelative();
+    const bool  relative = m_controller->IsKbRelative();
+    const float relMul   = (m_controller->GetKbRelSens() / 50.0f) * 1.4f;   // 50 = baseline
 
     auto pad = [&](int xi, int yi) {
         int16_t x, y;
@@ -1308,8 +1368,8 @@ void TrayApp::PollKeyboard() {
             auto p = pad(xi[s], yi[s]);
             if (relative) {
                 if (m_kbWasTouch[s])
-                    m_keyboard.MovePointer(s, (p.first - m_kbPrevNx[s]) * 1.4f,
-                                              (p.second - m_kbPrevNy[s]) * 1.4f);
+                    m_keyboard.MovePointer(s, (p.first - m_kbPrevNx[s]) * relMul,
+                                              (p.second - m_kbPrevNy[s]) * relMul);
                 m_kbPrevNx[s] = p.first; m_kbPrevNy[s] = p.second;
             } else {
                 m_keyboard.SetPointerAbs(s, p.first, p.second);
@@ -1440,6 +1500,7 @@ void TrayApp::LoadProfileSettings(HKEY key) {
     m_controller->SetKbUsePadClick        (rb(L"KbUsePadClick", true));
     m_controller->SetKbSplit              (rb(L"KbSplit",    true));
     m_controller->SetKbRelative           (rb(L"KbRelative", false));
+    m_controller->SetKbRelSens            (static_cast<int>(rd(L"KbRelSens", 50)));
     m_controller->SetKbBall               (rb(L"KbBall",     false));
     m_controller->SetKbLayout             (static_cast<int>(rd(L"KbLayout", 1)));
     m_keyboard.SetLayout                  (m_controller->GetKbLayout());
@@ -1495,6 +1556,7 @@ void TrayApp::SaveProfileSettings(HKEY key) {
     wb(L"KbUsePadClick",       m_controller->IsKbUsePadClick());
     wb(L"KbSplit",             m_controller->IsKbSplit());
     wb(L"KbRelative",          m_controller->IsKbRelative());
+    wd(L"KbRelSens",           static_cast<DWORD>(m_controller->GetKbRelSens()));
     wb(L"KbBall",              m_controller->IsKbBall());
     wd(L"KbLayout",            static_cast<DWORD>(m_controller->GetKbLayout()));
     wd(L"KbKeyBack",           static_cast<DWORD>(m_controller->GetKbKeyBackspace()));

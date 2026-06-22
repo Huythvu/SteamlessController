@@ -42,6 +42,9 @@ public:
     // --- geometry/state for the live preview drawn in the settings tab ---
     int  KeyCount() const { return static_cast<int>(m_keys.size()); }
     void KeyRect(int i, float& l, float& t, float& r, float& b) const;  // normalized 0..1
+    // For the L-shaped ISO Enter: normalized stem rect (the lower part). Returns
+    // false for ordinary keys.
+    bool KeyStem(int i, float& l, float& t, float& r, float& b) const;
     std::string KeyLabel(int i) const;          // display label (honours shift/caps), UTF-8
     bool IsModKey(int i) const;                 // shift/caps key
     bool IsModActive(int i) const;              // that modifier is currently on
@@ -51,7 +54,8 @@ public:
 
 private:
     // mod: 0 = normal, 1 = sticky Shift (one-shot), 2 = Caps toggle.
-    struct Key { RECT rc; std::wstring label; wchar_t ch; WORD vk; int mod; };
+    // lshape: an ISO Enter; rc is the top bar and stem is the lower-right part.
+    struct Key { RECT rc; RECT stem; std::wstring label; wchar_t ch; WORD vk; int mod; bool lshape; };
 
     static LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
     void BuildLayout();

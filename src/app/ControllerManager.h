@@ -42,6 +42,7 @@ public:
     void SetKbUsePadClick(bool b) { m_kbUsePadClick = b; }  bool IsKbUsePadClick() const   { return m_kbUsePadClick; }
     void SetKbSplit(bool b)       { m_kbSplit = b; }        bool IsKbSplit() const         { return m_kbSplit; }
     void SetKbRelative(bool b)    { m_kbRelative = b; }     bool IsKbRelative() const      { return m_kbRelative; }
+    void SetKbRelSens(int i)      { m_kbRelSens = i; }      int  GetKbRelSens() const      { return m_kbRelSens; }   // 1..100 (slide speed)
     void SetKbBall(bool b)        { m_kbBall = b; }         bool IsKbBall() const          { return m_kbBall; }
     void SetKbLayout(int i)       { m_kbLayout = i; }       int  GetKbLayout() const       { return m_kbLayout; }
     void SetKbKeyBackspace(int i) { m_kbKeyBack = i; }      int  GetKbKeyBackspace() const { return m_kbKeyBack; }
@@ -146,6 +147,7 @@ private:
     bool                               m_kbUsePadClick  = true;
     bool                               m_kbSplit        = true;
     bool                               m_kbRelative     = false;
+    int                                m_kbRelSens      = 50;   // 1..100 (relative slide speed)
     bool                               m_kbBall         = false;
     int                                m_kbLayout       = 1;    // 0 = Simple, 1 = ISO
     int                                m_kbKeyBack      = -1;   // shortcut: Backspace
