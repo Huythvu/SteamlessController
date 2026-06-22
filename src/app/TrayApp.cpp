@@ -735,7 +735,7 @@ void TrayApp::DrawTabs() {
         UpdateKeyboardPreviewInput();
 
         const ImVec2 avail = ImGui::GetContentRegionAvail();
-        const float  rightW = 196.0f;                  // the remap list is compact
+        const float  rightW = 230.0f;                  // wide enough for the binding text
         float leftW = avail.x - rightW - ImGui::GetStyle().ItemSpacing.x;
         if (leftW < 260.0f) leftW = avail.x * 0.6f;    // narrow-window fallback
 
@@ -788,10 +788,9 @@ void TrayApp::DrawTabs() {
         DrawKeyboardPreview(pv.x, pv.y);   // keyboard-shaped, fits the remaining space
         ImGui::EndChild();
 
-        // --- right column: the compact remapping list (sized to content) ---
+        // --- right column: the remapping list (fills the height) ---
         ImGui::SameLine();
-        const float remapH = 10.0f * ImGui::GetTextLineHeightWithSpacing() + 16.0f;
-        ImGui::BeginChild("kbremap", ImVec2(0, remapH < avail.y ? remapH : avail.y), true);
+        ImGui::BeginChild("kbremap", ImVec2(0, avail.y), true);
         ImGui::TextDisabled("FUNCTION -> BUTTON");
         ImGui::Separator();
         for (const KbBind& b : kBinds) {
