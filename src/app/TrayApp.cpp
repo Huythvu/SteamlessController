@@ -774,7 +774,7 @@ void TrayApp::DrawTabs() {
         ImGui::Spacing(); ImGui::Separator();
         ImGui::TextDisabled("LIVE PREVIEW");
         const ImVec2 pv = ImGui::GetContentRegionAvail();
-        DrawKeyboardPreview(pv.x < pv.y ? pv.x : pv.y);   // square, fills remaining space
+        DrawKeyboardPreview(pv.x, pv.y);   // keyboard-shaped, fits the remaining space
         ImGui::EndChild();
 
         // --- right column: the remapping list (controller-tab legend style) ---
@@ -1153,20 +1153,26 @@ void TrayApp::DrawTrackpadView(const char* label, bool touch, bool click,
 }
 
 // A live, scaled view of the on-screen keyboard (same geometry the overlay
-// paints): selected keys, active modifiers, and the floating cursors.
-void TrayApp::DrawKeyboardPreview(float size) {
-    if (size < 60.0f) size = 60.0f;
+// paints): selected keys, active modifiers, and the floating cursors. Keeps the
+// board's real aspect ratio so the preview is keyboard-shaped.
+void TrayApp::DrawKeyboardPreview(float availW, float availH) {
+    const float aspect = m_keyboard.AspectRatio();   // width / height
+    float w = availW;
+    float h = w / aspect;
+    if (h > availH) { h = availH; w = h * aspect; }
+    if (w < 120.0f) { w = 120.0f; h = w / aspect; }
+
     const ImVec2 o = ImGui::GetCursorScreenPos();
-    ImGui::Dummy(ImVec2(size, size));
+    ImGui::Dummy(ImVec2(w, h));
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->AddRectFilled(o, ImVec2(o.x + size, o.y + size), IM_COL32(24, 25, 28, 255), 6.0f);
+    dl->AddRectFilled(o, ImVec2(o.x + w, o.y + h), IM_COL32(24, 25, 28, 255), 6.0f);
 
     const int selL = m_keyboard.Selected(0), selR = m_keyboard.Selected(1);
     const int nk = m_keyboard.KeyCount();
     for (int i = 0; i < nk; ++i) {
         float l, t, r, b; m_keyboard.KeyRect(i, l, t, r, b);
-        ImVec2 a(o.x + l * size + 1, o.y + t * size + 1);
-        ImVec2 q(o.x + r * size - 1, o.y + b * size - 1);
+        ImVec2 a(o.x + l * w + 1, o.y + t * h + 1);
+        ImVec2 q(o.x + r * w - 1, o.y + b * h - 1);
         const bool sl = (i == selL), sr = (i == selR);
         ImU32 fill = IM_COL32(48, 50, 56, 255);
         if (sl && sr)                      fill = IM_COL32(150, 110, 230, 255);
@@ -1186,9 +1192,9 @@ void TrayApp::DrawKeyboardPreview(float size) {
     }
     if (m_controller->IsKbBall()) {
         const ImU32 bc[2] = { IM_COL32(60, 170, 90, 255), IM_COL32(60, 150, 240, 255) };
-        const float rad = size * 0.02f + 4.0f;
+        const float rad = (w < h ? w : h) * 0.03f + 3.0f;
         for (int s = 0; s < 2; ++s) {
-            ImVec2 c(o.x + m_keyboard.CursorX(s) * size, o.y + m_keyboard.CursorY(s) * size);
+            ImVec2 c(o.x + m_keyboard.CursorX(s) * w, o.y + m_keyboard.CursorY(s) * h);
             dl->AddCircleFilled(c, rad, bc[s]);
             dl->AddCircle(c, rad, IM_COL32(235, 237, 240, 255), 16, 2.0f);
         }

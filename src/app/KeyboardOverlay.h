@@ -47,6 +47,7 @@ public:
     bool IsModActive(int i) const;              // that modifier is currently on
     float CursorX(int side) const { return m_cx[side]; }
     float CursorY(int side) const { return m_cy[side]; }
+    float AspectRatio() const { return static_cast<float>(m_w) / static_cast<float>(m_h); }
 
 private:
     // mod: 0 = normal, 1 = sticky Shift (one-shot), 2 = Caps toggle.
@@ -74,7 +75,7 @@ private:
     int               m_selR    = -1;   // right pad's highlighted key
     float             m_cx[2]   = { 0.25f, 0.75f };  // pointer position per side
     float             m_cy[2]   = { 0.5f,  0.5f  };
-    int               m_w       = 600;   // square board
-    int               m_h       = 600;
+    int               m_w       = 900;   // keyboard-shaped (wider than tall)
+    int               m_h       = 330;
     std::vector<Key>  m_keys;
 };
