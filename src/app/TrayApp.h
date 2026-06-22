@@ -83,12 +83,10 @@ private:
     std::unique_ptr<ControllerManager> m_controller;
     std::wstring                       m_activeProfile = L"Default";
 
-    // On-screen keyboard overlay (summoned by Steam + X).
+    // On-screen keyboard overlay.
     KeyboardOverlay                    m_keyboard;
-    bool                               m_kbPrevClickL = false;
-    bool                               m_kbPrevClickR = false;
-    bool                               m_kbPrevBtn    = false;
-    float                              m_kbPrevNx[2]  = { 0.0f, 0.0f };  // relative mode
+    bool                               m_kbPrevActive[2] = { false, false };  // commit edge per side
+    float                              m_kbPrevNx[2]  = { 0.0f, 0.0f };        // relative mode
     float                              m_kbPrevNy[2]  = { 0.0f, 0.0f };
     bool                               m_kbWasTouch[2]= { false, false };
 
@@ -107,7 +105,7 @@ private:
 
     static constexpr UINT WM_TRAY          = WM_APP + 1;
     static constexpr UINT WM_STATE_CHANGED = WM_APP + 2;
-    static constexpr UINT WM_KB_TOGGLE     = WM_APP + 3;
+    static constexpr UINT WM_KB_SETOPEN    = WM_APP + 3;
     static constexpr UINT TRAY_UID         = 1;
     static constexpr UINT BATT_TIMER       = 2;
     static constexpr UINT KB_TIMER         = 3;

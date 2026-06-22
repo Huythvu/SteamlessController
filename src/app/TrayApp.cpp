@@ -160,8 +160,8 @@ bool TrayApp::Init(HINSTANCE hInstance) {
             m_pendingVigemMissing.store(vigemMissing);
             PostMessageW(m_hwnd, WM_STATE_CHANGED, 0, 0);
         },
-        [this]() {                       // keyboard toggle (from the read thread)
-            PostMessageW(m_hwnd, WM_KB_TOGGLE, 0, 0);
+        [this](bool open) {              // keyboard open/close (from the read thread)
+            PostMessageW(m_hwnd, WM_KB_SETOPEN, open ? 1 : 0, 0);
         });
 
     LoadSettings();
@@ -372,18 +372,19 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         UpdateTrayIcon();
         return 0;
 
-    case WM_KB_TOGGLE: {
-        if (m_keyboard.IsVisible()) {
-            m_keyboard.Hide();
-            m_controller->SetKeyboardMode(false);
-            KillTimer(m_hwnd, KB_TIMER);
-        } else {
+    case WM_KB_SETOPEN: {
+        const bool open = wp != 0;
+        if (open && !m_keyboard.IsVisible()) {
             m_keyboard.SetSplit(m_controller->IsKbSplit());
             m_keyboard.Show();
             m_controller->SetKeyboardMode(true);
-            m_kbPrevClickL = m_kbPrevClickR = m_kbPrevBtn = false;
+            m_kbPrevActive[0] = m_kbPrevActive[1] = false;
             m_kbWasTouch[0] = m_kbWasTouch[1] = false;
             SetTimer(m_hwnd, KB_TIMER, 16, nullptr);   // ~60 Hz poll
+        } else if (!open && m_keyboard.IsVisible()) {
+            m_keyboard.Hide();
+            m_controller->SetKeyboardMode(false);
+            KillTimer(m_hwnd, KB_TIMER);
         }
         return 0;
     }
@@ -675,6 +676,53 @@ void TrayApp::DrawTabs() {
         ImGui::EndTabItem();
     }
 
+    if (ImGui::BeginTabItem("Keyboard")) {
+        // A combo to pick a source button (or None). Returns via the setter.
+        auto sourceCombo = [&](const char* label, int cur, void (ControllerManager::*set)(int)) {
+            std::string prev = cur < 0 ? "None" : Narrow(InputMapper::kSources[cur].name);
+            ImGui::SetNextItemWidth(200);
+            if (ImGui::BeginCombo(label, prev.c_str())) {
+                if (ImGui::Selectable("None", cur < 0)) { (c.*set)(-1); SaveSettings(); }
+                for (int i = 0; i < InputMapper::kSourceCount; ++i)
+                    if (ImGui::Selectable(Narrow(InputMapper::kSources[i].name).c_str(), cur == i)) {
+                        (c.*set)(i); SaveSettings();
+                    }
+                ImGui::EndCombo();
+            }
+        };
+
+        ImGui::TextDisabled("OPEN / CLOSE");
+        sourceCombo("Modifier (hold)", c.GetKbOpenModifier(), &ControllerManager::SetKbOpenModifier);
+        sourceCombo("Open button",     c.GetKbOpenButton(),   &ControllerManager::SetKbOpenButton);
+        ImGui::TextDisabled("Leave the modifier as None for a single-button trigger.");
+        bool hold = c.IsKbOpenHold();
+        if (ImGui::RadioButton("Toggle on/off", !hold)) { c.SetKbOpenHold(false); SaveSettings(); }
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Hold to keep open", hold)) { c.SetKbOpenHold(true); SaveSettings(); }
+
+        ImGui::Spacing(); ImGui::Separator();
+        ImGui::TextDisabled("TYPING / CLICK");
+        bool usePad = c.IsKbUsePadClick();
+        if (ImGui::Checkbox("Press the trackpad to type the key", &usePad)) {
+            c.SetKbUsePadClick(usePad); SaveSettings();
+        }
+        sourceCombo("Left click button",  c.GetKbClickLeft(),  &ControllerManager::SetKbClickLeft);
+        sourceCombo("Right click button", c.GetKbClickRight(), &ControllerManager::SetKbClickRight);
+        ImGui::TextDisabled("Each pad's button types the key that pad is pointing at.");
+
+        ImGui::Spacing(); ImGui::Separator();
+        ImGui::TextDisabled("LAYOUT");
+        bool split = c.IsKbSplit();
+        if (ImGui::Checkbox("Split: each pad controls its half", &split)) {
+            c.SetKbSplit(split); SaveSettings();
+        }
+        bool rel = c.IsKbRelative();
+        if (ImGui::Checkbox("Slide to move (relative) instead of touch position", &rel)) {
+            c.SetKbRelative(rel); SaveSettings();
+        }
+        ImGui::EndTabItem();
+    }
+
     if (ImGui::BeginTabItem("General")) {
         bool autoEnable = c.IsAutoEnable();
         if (ImGui::Checkbox("Auto-enable Steamless Mode", &autoEnable)) {
@@ -684,34 +732,6 @@ void TrayApp::DrawTabs() {
         bool startup = IsStartupEnabled();
         if (ImGui::Checkbox("Start with Windows", &startup))
             SetStartupEnabled(startup);
-
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::TextDisabled("ON-SCREEN KEYBOARD (Steam + X)");
-        bool split = c.IsKbSplit();
-        if (ImGui::Checkbox("Split: each pad controls its half", &split)) {
-            c.SetKbSplit(split); SaveSettings();
-        }
-        bool rel = c.IsKbRelative();
-        if (ImGui::Checkbox("Slide to move (relative) instead of touch position", &rel)) {
-            c.SetKbRelative(rel); SaveSettings();
-        }
-        // Optional extra button that also types the highlighted key(s).
-        int kbBtn = c.GetKbClickButton();
-        std::string kbPreview = kbBtn < 0 ? "None (pad press only)"
-                                          : Narrow(InputMapper::kSources[kbBtn].name);
-        ImGui::SetNextItemWidth(220);
-        if (ImGui::BeginCombo("Extra type button", kbPreview.c_str())) {
-            if (ImGui::Selectable("None (pad press only)", kbBtn < 0)) {
-                c.SetKbClickButton(-1); SaveSettings();
-            }
-            for (int i = 0; i < InputMapper::kSourceCount; ++i) {
-                if (ImGui::Selectable(Narrow(InputMapper::kSources[i].name).c_str(), kbBtn == i)) {
-                    c.SetKbClickButton(i); SaveSettings();
-                }
-            }
-            ImGui::EndCombo();
-        }
 
         ImGui::Spacing();
         ImGui::Separator();
@@ -1166,30 +1186,30 @@ void TrayApp::PollKeyboard() {
         m_kbWasTouch[s] = touch[s];
     }
 
-    // Optional extra button types whichever pad(s) you're touching.
-    bool btn = false;
-    int  kbBtn = m_controller->GetKbClickButton();
-    if (kbBtn >= 0 && kbBtn < InputMapper::kSourceCount) {
-        const InputMapper::Source& src = InputMapper::kSources[kbBtn];
-        btn = n > src.byteIndex && (rep[src.byteIndex] & src.mask) != 0;
-    }
-    const bool btnEdge = btn && !m_kbPrevBtn;
-    const bool prevClick[2] = { m_kbPrevClickL, m_kbPrevClickR };
+    // Per-side commit: the pad hard-press (if enabled) and/or a remapped button.
+    const bool usePad = m_controller->IsKbUsePadClick();
+    const int  clickBtn[2] = { m_controller->GetKbClickLeft(),
+                               m_controller->GetKbClickRight() };
     const uint8_t actuator[2] = { 1, 0 };   // left pad -> side 1, right pad -> side 0
 
+    auto held = [&](int idx) -> bool {
+        if (idx < 0 || idx >= InputMapper::kSourceCount) return false;
+        const InputMapper::Source& s = InputMapper::kSources[idx];
+        return n > s.byteIndex && (rep[s.byteIndex] & s.mask) != 0;
+    };
+
     for (int s = 0; s < 2; ++s) {
-        const bool press   = click[s] && !prevClick[s];
-        const bool release = !click[s] && prevClick[s];
-        if (press || (btnEdge && touch[s])) {
+        const bool active = (usePad && click[s]) || held(clickBtn[s]);
+        const bool press   = active && !m_kbPrevActive[s];
+        const bool release = !active && m_kbPrevActive[s];
+        if (press) {
             m_keyboard.Commit(s);
             m_controller->KeyboardHaptic(actuator[s]);   // press feedback
         } else if (release) {
             m_controller->KeyboardHaptic(actuator[s]);   // release feedback
         }
+        m_kbPrevActive[s] = active;
     }
-    m_kbPrevClickL = click[0];
-    m_kbPrevClickR = click[1];
-    m_kbPrevBtn    = btn;
 }
 
 // ---------------------------------------------------------------------------
@@ -1256,7 +1276,12 @@ void TrayApp::LoadProfileSettings(HKEY key) {
     m_controller->SetHapticOnMove         (rb(L"HapticOnMove", false));
     m_controller->SetHapticIntensity      (static_cast<int>(rd(L"HapticDensity",        50)));
     m_controller->SetHapticClickHardness  (static_cast<int>(rd(L"HapticClickHardness",    2)));
-    m_controller->SetKbClickButton        (static_cast<int>(rd(L"KbClickButton", 0xFFFFFFFF)));
+    m_controller->SetKbOpenButton         (static_cast<int>(rd(L"KbOpenButton",    2)));
+    m_controller->SetKbOpenModifier       (static_cast<int>(rd(L"KbOpenModifier", 10)));
+    m_controller->SetKbOpenHold           (rb(L"KbOpenHold", false));
+    m_controller->SetKbClickLeft          (static_cast<int>(rd(L"KbClickL", 0xFFFFFFFF)));
+    m_controller->SetKbClickRight         (static_cast<int>(rd(L"KbClickR", 0xFFFFFFFF)));
+    m_controller->SetKbUsePadClick        (rb(L"KbUsePadClick", true));
     m_controller->SetKbSplit              (rb(L"KbSplit",    true));
     m_controller->SetKbRelative           (rb(L"KbRelative", false));
 
@@ -1300,7 +1325,12 @@ void TrayApp::SaveProfileSettings(HKEY key) {
     wd(L"RightStickSens",      static_cast<DWORD>(m_controller->GetRightStickSensitivity()));
     wd(L"HapticDensity",       static_cast<DWORD>(m_controller->GetHapticIntensity()));
     wd(L"HapticClickHardness", static_cast<DWORD>(m_controller->GetHapticClickHardness()));
-    wd(L"KbClickButton",       static_cast<DWORD>(m_controller->GetKbClickButton()));
+    wd(L"KbOpenButton",        static_cast<DWORD>(m_controller->GetKbOpenButton()));
+    wd(L"KbOpenModifier",      static_cast<DWORD>(m_controller->GetKbOpenModifier()));
+    wb(L"KbOpenHold",          m_controller->IsKbOpenHold());
+    wd(L"KbClickL",            static_cast<DWORD>(m_controller->GetKbClickLeft()));
+    wd(L"KbClickR",            static_cast<DWORD>(m_controller->GetKbClickRight()));
+    wb(L"KbUsePadClick",       m_controller->IsKbUsePadClick());
     wb(L"KbSplit",             m_controller->IsKbSplit());
     wb(L"KbRelative",          m_controller->IsKbRelative());
 

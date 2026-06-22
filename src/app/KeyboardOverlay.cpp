@@ -94,8 +94,16 @@ void KeyboardOverlay::Hide() {
 }
 
 void KeyboardOverlay::RangeFor(int side, float& lo, float& hi) const {
-    if (m_split) { lo = (side == 0) ? 0.0f : 0.5f; hi = (side == 0) ? 0.5f : 1.0f; }
-    else         { lo = 0.0f; hi = 1.0f; }
+    if (m_split) {
+        // Split exactly at the midpoint. Nudge the left side's upper bound just
+        // under 0.5 so it lands in the last left-half key, not the first
+        // right-half one (which sits exactly on the midpoint column).
+        const float eps = 1.0f / static_cast<float>(m_w);
+        lo = (side == 0) ? 0.0f : 0.5f;
+        hi = (side == 0) ? 0.5f - eps : 1.0f;
+    } else {
+        lo = 0.0f; hi = 1.0f;
+    }
 }
 
 void KeyboardOverlay::UpdateSel(int side) {

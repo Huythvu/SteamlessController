@@ -42,9 +42,9 @@ static float StickExpFromPos(int pos) {
 }
 
 ControllerManager::ControllerManager(StateChangedFn onStateChanged,
-                                     KeyboardToggleFn onKeyboardToggle)
+                                     KeyboardSetOpenFn onKeyboardSetOpen)
     : m_onStateChanged(std::move(onStateChanged))
-    , m_onKeyboardToggle(std::move(onKeyboardToggle))
+    , m_onKeyboardSetOpen(std::move(onKeyboardSetOpen))
 {
     // Route trackpad haptic pulses to the physical controller.
     m_trackpad.SetHapticSink([](uint8_t side, uint16_t amp, uint8_t count) {
@@ -336,22 +336,50 @@ void ControllerManager::ReadLoop() {
         }
         if (buf[0] != SteamController::REPORT_STATE) continue;
 
-        // Toggle the on-screen keyboard on a Steam + X chord (rising edge).
-        if (n >= 6 && m_onKeyboardToggle) {
-            const bool steam = (buf[4] & 0x01) != 0;   // Steam/Guide
-            const bool xbtn  = (buf[2] & 0x04) != 0;   // X
-            const bool chord = steam && xbtn;
-            if (chord && !m_prevKbChord) m_onKeyboardToggle();
-            m_prevKbChord = chord;
+        auto held = [&](int idx) -> bool {
+            if (idx < 0 || idx >= InputMapper::kSourceCount) return false;
+            const InputMapper::Source& s = InputMapper::kSources[idx];
+            return s.byteIndex < n && (buf[s.byteIndex] & s.mask) != 0;
+        };
+
+        // Open/close the on-screen keyboard from the configured trigger.
+        if (n >= 6 && m_onKeyboardSetOpen) {
+            const bool mod   = m_kbOpenModifier < 0 ? true : held(m_kbOpenModifier);
+            const bool combo = mod && held(m_kbOpenButton);
+            bool desired;
+            if (m_kbOpenHold)            desired = combo;                       // hold to keep open
+            else if (combo && !m_prevKbCombo) desired = !m_kbWantOpen;          // toggle on press
+            else                        desired = m_kbWantOpen;
+            m_prevKbCombo = combo;
+            if (desired != m_kbWantOpen) { m_kbWantOpen = desired; m_onKeyboardSetOpen(desired); }
         }
 
-        // In keyboard mode the trackpad drives the overlay, so suppress the
-        // normal mouse/gamepad/key output (but still publish the snapshot below).
         if (!m_keyboardMode.load()) {
             std::lock_guard<std::mutex> lock(m_inputMutex);
             uint16_t buttonBits = m_mapper.Process(buf, n);
             if (m_virtual) m_virtual->Update(buf, n, buttonBits);
             m_trackpad.Update(buf, n);
+        } else {
+            // Keyboard is open: the trackpads drive it (skip trackpad output),
+            // and the keyboard's own buttons are masked from the normal mapping
+            // so everything else still works as usual.
+            uint8_t mbuf[64];
+            std::memcpy(mbuf, buf, n);
+            auto clear = [&](int idx) {
+                if (idx < 0 || idx >= InputMapper::kSourceCount) return;
+                const InputMapper::Source& s = InputMapper::kSources[idx];
+                if (s.byteIndex < n)
+                    mbuf[s.byteIndex] = static_cast<uint8_t>(mbuf[s.byteIndex] & ~s.mask);
+            };
+            clear(m_kbOpenButton);
+            clear(m_kbOpenModifier);
+            clear(m_kbClickL);
+            clear(m_kbClickR);
+            clear(19);   // Right Pad Click
+            clear(20);   // Left Pad Click
+            std::lock_guard<std::mutex> lock(m_inputMutex);
+            uint16_t buttonBits = m_mapper.Process(mbuf, n);
+            if (m_virtual) m_virtual->Update(mbuf, n, buttonBits);
         }
 
         // Publish a snapshot for the live input monitor.

@@ -16,10 +16,10 @@ class VirtualController;
 class ControllerManager {
 public:
     using StateChangedFn = std::function<void(bool connected, bool gameModeActive, bool vigemMissing)>;
-    using KeyboardToggleFn = std::function<void()>;   // fired from the read thread
+    using KeyboardSetOpenFn = std::function<void(bool open)>;   // fired from the read thread
 
     explicit ControllerManager(StateChangedFn onStateChanged,
-                               KeyboardToggleFn onKeyboardToggle = nullptr);
+                               KeyboardSetOpenFn onKeyboardSetOpen = nullptr);
     ~ControllerManager();
     ControllerManager(const ControllerManager&) = delete;
     ControllerManager& operator=(const ControllerManager&) = delete;
@@ -32,12 +32,16 @@ public:
     void SetKeyboardMode(bool on) { m_keyboardMode = on; }
     bool IsKeyboardMode() const   { return m_keyboardMode.load(); }
     void KeyboardHaptic(uint8_t side);   // pulse on a key press (side 0=right,1=left)
-    void SetKbClickButton(int sourceIndex) { m_kbClickButton = sourceIndex; }
-    int  GetKbClickButton() const          { return m_kbClickButton; }
-    void SetKbSplit(bool b)    { m_kbSplit = b; }
-    bool IsKbSplit() const     { return m_kbSplit; }
-    void SetKbRelative(bool b) { m_kbRelative = b; }
-    bool IsKbRelative() const  { return m_kbRelative; }
+
+    // --- On-screen keyboard configuration (source indices into InputMapper) ---
+    void SetKbOpenButton(int i)   { m_kbOpenButton = i; }   int  GetKbOpenButton() const   { return m_kbOpenButton; }
+    void SetKbOpenModifier(int i) { m_kbOpenModifier = i; } int  GetKbOpenModifier() const { return m_kbOpenModifier; }
+    void SetKbOpenHold(bool b)    { m_kbOpenHold = b; }     bool IsKbOpenHold() const      { return m_kbOpenHold; }
+    void SetKbClickLeft(int i)    { m_kbClickL = i; }       int  GetKbClickLeft() const    { return m_kbClickL; }
+    void SetKbClickRight(int i)   { m_kbClickR = i; }       int  GetKbClickRight() const   { return m_kbClickR; }
+    void SetKbUsePadClick(bool b) { m_kbUsePadClick = b; }  bool IsKbUsePadClick() const   { return m_kbUsePadClick; }
+    void SetKbSplit(bool b)       { m_kbSplit = b; }        bool IsKbSplit() const         { return m_kbSplit; }
+    void SetKbRelative(bool b)    { m_kbRelative = b; }     bool IsKbRelative() const      { return m_kbRelative; }
 
     // Toggle game mode on/off. No-op if controller is not connected.
     void EnableGameMode();
@@ -125,12 +129,18 @@ private:
     void ReadLoop();
 
     StateChangedFn                     m_onStateChanged;
-    KeyboardToggleFn                   m_onKeyboardToggle;
+    KeyboardSetOpenFn                  m_onKeyboardSetOpen;
     std::atomic<bool>                  m_keyboardMode{false};
-    bool                               m_prevKbChord = false;
-    int                                m_kbClickButton = -1;   // source index, -1 = none
-    bool                               m_kbSplit       = true;
-    bool                               m_kbRelative    = false;
+    bool                               m_kbWantOpen   = false;
+    bool                               m_prevKbCombo  = false;
+    int                                m_kbOpenButton   = 2;    // X
+    int                                m_kbOpenModifier = 10;   // Steam (-1 = none)
+    bool                               m_kbOpenHold     = false;
+    int                                m_kbClickL       = -1;   // source index, -1 = none
+    int                                m_kbClickR       = -1;
+    bool                               m_kbUsePadClick  = true;
+    bool                               m_kbSplit        = true;
+    bool                               m_kbRelative     = false;
     std::atomic<bool>                  m_connected{false};
     std::atomic<bool>                  m_gameModeActive{false};
     bool                               m_trackpadMouseEnabled = false;
