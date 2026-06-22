@@ -10,6 +10,8 @@
 // key (SetPointer) and a click commits it (Commit).
 class KeyboardOverlay {
 public:
+    enum Layout { Simple = 0, Iso = 1 };
+
     bool Init(HINSTANCE hInstance);
     void Show();
     void Hide();
@@ -21,6 +23,9 @@ public:
     // Ball mode: draw a floating cursor per pad instead of filling the whole
     // hovered key (Steam-style). Selection/typing is unchanged.
     void SetBallMode(bool ball) { m_ball = ball; }
+    // Pick the key layout (rebuilds the grid).
+    void SetLayout(int layout);
+    int  GetLayout() const { return m_layout; }
     // The key index each side is currently pointing at (-1 = none).
     int  Selected(int side) const { return side == 0 ? m_selL : m_selR; }
     // Absolute: the pad position maps straight to a board position.
@@ -34,8 +39,18 @@ public:
     void SendKey(WORD vk);
     HWND Hwnd() const { return m_hwnd; }
 
+    // --- geometry/state for the live preview drawn in the settings tab ---
+    int  KeyCount() const { return static_cast<int>(m_keys.size()); }
+    void KeyRect(int i, float& l, float& t, float& r, float& b) const;  // normalized 0..1
+    std::string KeyLabel(int i) const;          // display label (honours shift/caps), UTF-8
+    bool IsModKey(int i) const;                 // shift/caps key
+    bool IsModActive(int i) const;              // that modifier is currently on
+    float CursorX(int side) const { return m_cx[side]; }
+    float CursorY(int side) const { return m_cy[side]; }
+
 private:
-    struct Key { RECT rc; std::wstring label; wchar_t ch; WORD vk; };
+    // mod: 0 = normal, 1 = sticky Shift (one-shot), 2 = Caps toggle.
+    struct Key { RECT rc; std::wstring label; wchar_t ch; WORD vk; int mod; };
 
     static LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
     void BuildLayout();
@@ -43,18 +58,23 @@ private:
     int  HitAt(float gridX, float ny) const;
     void RangeFor(int side, float& lo, float& hi) const;
     void UpdateSel(int side);
-    static void TypeKey(const Key& k);
+    void TypeKey(const Key& k);              // applies shift/caps, then clears shift
+    std::wstring DisplayLabel(int i) const;  // wide version of KeyLabel
+    static wchar_t ShiftChar(wchar_t c);     // shifted form of a character
 
     HINSTANCE         m_hinst   = nullptr;
     HWND              m_hwnd    = nullptr;
     bool              m_visible = false;
     bool              m_split   = true;
     bool              m_ball    = false;  // draw floating cursors instead of key fills
+    int               m_layout  = Iso;
+    bool              m_shift   = false;  // one-shot shift pending
+    bool              m_caps    = false;  // caps lock
     int               m_selL    = -1;   // left pad's highlighted key
     int               m_selR    = -1;   // right pad's highlighted key
     float             m_cx[2]   = { 0.25f, 0.75f };  // pointer position per side
     float             m_cy[2]   = { 0.5f,  0.5f  };
-    int               m_w       = 920;
-    int               m_h       = 340;
+    int               m_w       = 600;   // square board
+    int               m_h       = 600;
     std::vector<Key>  m_keys;
 };

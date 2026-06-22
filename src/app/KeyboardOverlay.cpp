@@ -17,56 +17,51 @@ bool KeyboardOverlay::Init(HINSTANCE hInstance) {
 }
 
 // Build the key grid and pre-compute each key's pixel rectangle so painting and
-// hit-testing share the same geometry. The rows are staggered and the special
-// keys are wider, for a more ISO-keyboard look.
+// hit-testing share the same geometry. Both layouts fill the (square) board.
 void KeyboardOverlay::BuildLayout() {
     m_keys.clear();
-    struct Cell { std::wstring label; wchar_t ch; WORD vk; float w; };
+    struct Cell { std::wstring label; wchar_t ch; WORD vk; float w; int mod; };
     struct Row  { float offset; std::vector<Cell> cells; };  // offset/widths in key units
     std::vector<Row> rows;
 
-    auto ch = [](wchar_t c, float w = 1.0f) -> Cell {
-        return { std::wstring(1, c), c, 0, w };
-    };
+    auto C     = [](wchar_t c, float w = 1.0f) -> Cell { return { std::wstring(1, c), c, 0, w, 0 }; };
+    auto Sp    = [](const wchar_t* l, WORD vk, float w) -> Cell { return { l, 0, vk, w, 0 }; };
+    auto Mod   = [](const wchar_t* l, int mod, float w) -> Cell { return { l, 0, 0, w, mod }; };
     auto chars = [&](const wchar_t* s, std::vector<Cell>& out) {
-        for (const wchar_t* p = s; *p; ++p) out.push_back(ch(*p));
+        for (const wchar_t* p = s; *p; ++p) out.push_back(C(*p));
     };
 
-    // Row 0: number row + Backspace.
-    {
-        Row r; r.offset = 0.0f;
-        chars(L"1234567890", r.cells);
-        r.cells.push_back(ch(L'-')); r.cells.push_back(ch(L'='));
-        r.cells.push_back({ L"<-", 0, VK_BACK, 2.0f });
-        rows.push_back(std::move(r));
-    }
-    // Row 1: QWERTY, slight stagger.
-    {
-        Row r; r.offset = 0.5f;
-        chars(L"qwertyuiop", r.cells);
-        r.cells.push_back(ch(L'[')); r.cells.push_back(ch(L']'));
-        rows.push_back(std::move(r));
-    }
-    // Row 2: home row + Enter (wide).
-    {
-        Row r; r.offset = 0.75f;
-        chars(L"asdfghjkl", r.cells);
-        r.cells.push_back(ch(L';')); r.cells.push_back(ch(L'\''));
-        r.cells.push_back({ L"Enter", 0, VK_RETURN, 2.25f });
-        rows.push_back(std::move(r));
-    }
-    // Row 3: bottom row.
-    {
-        Row r; r.offset = 1.25f;
-        chars(L"zxcvbnm", r.cells);
-        r.cells.push_back(ch(L',')); r.cells.push_back(ch(L'.')); r.cells.push_back(ch(L'/'));
-        rows.push_back(std::move(r));
-    }
-    // Row 4: space bar, centred.
-    {
-        Row r; r.offset = 3.5f;
-        r.cells.push_back({ L"Space", L' ', 0, 8.0f });
-        rows.push_back(std::move(r));
+    if (m_layout == Simple) {
+        // Even grid that fills the board completely (the original simple board).
+        { Row r{0.0f,{}}; chars(L"1234567890", r.cells); rows.push_back(std::move(r)); }
+        { Row r{0.0f,{}}; chars(L"qwertyuiop", r.cells); rows.push_back(std::move(r)); }
+        { Row r{0.0f,{}}; chars(L"asdfghjkl", r.cells); r.cells.push_back(Sp(L"<-", VK_BACK, 1.0f)); rows.push_back(std::move(r)); }
+        { Row r{0.0f,{}}; chars(L"zxcvbnm,.", r.cells); r.cells.push_back(Sp(L"Enter", VK_RETURN, 1.0f)); rows.push_back(std::move(r)); }
+        { Row r{0.0f,{}}; r.cells.push_back(Sp(L"Space", VK_SPACE, 10.0f)); rows.push_back(std::move(r)); }
+    } else {
+        // ISO-style: staggered, with modifier keys filling the offsets so every
+        // row spans the full width (no empty space). 15 units per row.
+        { Row r{0.0f,{}}; r.cells.push_back(C(L'`'));
+          chars(L"1234567890", r.cells);
+          r.cells.push_back(C(L'-')); r.cells.push_back(C(L'='));
+          r.cells.push_back(Sp(L"<-", VK_BACK, 2.0f)); rows.push_back(std::move(r)); }
+        { Row r{0.0f,{}}; r.cells.push_back(Sp(L"Tab", VK_TAB, 1.5f));
+          chars(L"qwertyuiop", r.cells);
+          r.cells.push_back(C(L'[')); r.cells.push_back(C(L']'));
+          r.cells.push_back(C(L'\\', 1.5f)); rows.push_back(std::move(r)); }
+        { Row r{0.0f,{}}; r.cells.push_back(Mod(L"Caps", 2, 1.75f));
+          chars(L"asdfghjkl", r.cells);
+          r.cells.push_back(C(L';')); r.cells.push_back(C(L'\''));
+          r.cells.push_back(Sp(L"Enter", VK_RETURN, 2.25f)); rows.push_back(std::move(r)); }
+        { Row r{0.0f,{}}; r.cells.push_back(Mod(L"Shift", 1, 2.0f));
+          chars(L"zxcvbnm", r.cells);
+          r.cells.push_back(C(L',')); r.cells.push_back(C(L'.')); r.cells.push_back(C(L'/'));
+          r.cells.push_back(Mod(L"Shift", 1, 3.0f)); rows.push_back(std::move(r)); }
+        { Row r{0.0f,{}}; r.cells.push_back(Sp(L"Space", VK_SPACE, 9.0f));
+          r.cells.push_back(Sp(L"Lf", VK_LEFT, 1.5f));
+          r.cells.push_back(Sp(L"Up", VK_UP,   1.5f));
+          r.cells.push_back(Sp(L"Dn", VK_DOWN, 1.5f));
+          r.cells.push_back(Sp(L"Rt", VK_RIGHT,1.5f)); rows.push_back(std::move(r)); }
     }
 
     // The widest row defines the key unit so every row shares one scale.
@@ -76,25 +71,43 @@ void KeyboardOverlay::BuildLayout() {
         for (const Cell& c : r.cells) u += c.w;
         if (u > maxUnits) maxUnits = u;
     }
+    if (maxUnits <= 0.0f) maxUnits = 1.0f;
     const float unit = static_cast<float>(m_w) / maxUnits;
 
     const int nRows = static_cast<int>(rows.size());
     const int rowH  = m_h / nRows;
     for (int ri = 0; ri < nRows; ++ri) {
         float x = rows[ri].offset * unit;
-        for (const Cell& c : rows[ri].cells) {
+        const int n = static_cast<int>(rows[ri].cells.size());
+        for (int ci = 0; ci < n; ++ci) {
+            const Cell& c = rows[ri].cells[ci];
             const float w = c.w * unit;
             Key k;
             k.rc    = { static_cast<int>(x), ri * rowH,
-                        static_cast<int>(x + w),
+                        (ci == n - 1) ? m_w : static_cast<int>(x + w),
                         (ri == nRows - 1) ? m_h : (ri + 1) * rowH };
             k.label = c.label;
             k.ch    = c.ch;
             k.vk    = c.vk;
+            k.mod   = c.mod;
             m_keys.push_back(std::move(k));
             x += w;
         }
     }
+}
+
+void KeyboardOverlay::SetLayout(int layout) {
+    if (layout != Simple && layout != Iso) layout = Iso;
+    if (layout == m_layout && !m_keys.empty()) return;
+    m_layout = layout;
+    BuildLayout();
+    for (int s = 0; s < 2; ++s) {
+        float lo, hi; RangeFor(s, lo, hi);
+        m_cx[s] = (lo + hi) * 0.5f;
+        m_cy[s] = 0.5f;
+        UpdateSel(s);
+    }
+    if (m_hwnd) InvalidateRect(m_hwnd, nullptr, FALSE);
 }
 
 void KeyboardOverlay::SendKey(WORD vk) {
@@ -196,8 +209,35 @@ int KeyboardOverlay::HitAt(float gridX, float ny) const {
 
 void KeyboardOverlay::Commit(int side) {
     const int sel = (side == 0) ? m_selL : m_selR;
-    if (sel >= 0 && sel < static_cast<int>(m_keys.size()))
-        TypeKey(m_keys[sel]);
+    if (sel < 0 || sel >= static_cast<int>(m_keys.size())) return;
+    const Key& k = m_keys[sel];
+    if (k.mod == 1) { m_shift = !m_shift; if (m_hwnd) InvalidateRect(m_hwnd, nullptr, FALSE); return; }
+    if (k.mod == 2) { m_caps  = !m_caps;  if (m_hwnd) InvalidateRect(m_hwnd, nullptr, FALSE); return; }
+    TypeKey(k);
+}
+
+wchar_t KeyboardOverlay::ShiftChar(wchar_t c) {
+    if (c >= L'a' && c <= L'z') return static_cast<wchar_t>(c - L'a' + L'A');
+    switch (c) {
+        case L'1': return L'!'; case L'2': return L'@'; case L'3': return L'#';
+        case L'4': return L'$'; case L'5': return L'%'; case L'6': return L'^';
+        case L'7': return L'&'; case L'8': return L'*'; case L'9': return L'(';
+        case L'0': return L')'; case L'-': return L'_'; case L'=': return L'+';
+        case L'[': return L'{'; case L']': return L'}'; case L'\\': return L'|';
+        case L';': return L':'; case L'\'': return L'"'; case L',': return L'<';
+        case L'.': return L'>'; case L'/': return L'?'; case L'`': return L'~';
+    }
+    return c;
+}
+
+std::wstring KeyboardOverlay::DisplayLabel(int i) const {
+    const Key& k = m_keys[i];
+    if (k.vk || k.mod) return k.label;
+    wchar_t c = k.ch;
+    const bool letter = (c >= L'a' && c <= L'z');
+    const bool up = letter ? (m_caps != m_shift) : m_shift;
+    if (up) c = ShiftChar(c);
+    return std::wstring(1, c);
 }
 
 void KeyboardOverlay::TypeKey(const Key& k) {
@@ -209,12 +249,49 @@ void KeyboardOverlay::TypeKey(const Key& k) {
         in[1].ki.wVk = k.vk;
         in[1].ki.dwFlags = KEYEVENTF_KEYUP;
     } else {
-        in[0].ki.wScan   = k.ch;
+        wchar_t c = k.ch;
+        const bool letter = (c >= L'a' && c <= L'z');
+        const bool up = letter ? (m_caps != m_shift) : m_shift;
+        if (up) c = ShiftChar(c);
+        in[0].ki.wScan   = c;
         in[0].ki.dwFlags = KEYEVENTF_UNICODE;
-        in[1].ki.wScan   = k.ch;
+        in[1].ki.wScan   = c;
         in[1].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
     }
     SendInput(2, in, sizeof(INPUT));
+    if (m_shift) {                       // one-shot shift is consumed by a key
+        m_shift = false;
+        if (m_hwnd) InvalidateRect(m_hwnd, nullptr, FALSE);
+    }
+}
+
+bool KeyboardOverlay::IsModKey(int i) const {
+    return i >= 0 && i < static_cast<int>(m_keys.size()) && m_keys[i].mod != 0;
+}
+
+bool KeyboardOverlay::IsModActive(int i) const {
+    if (i < 0 || i >= static_cast<int>(m_keys.size())) return false;
+    const int m = m_keys[i].mod;
+    return (m == 1 && m_shift) || (m == 2 && m_caps);
+}
+
+void KeyboardOverlay::KeyRect(int i, float& l, float& t, float& r, float& b) const {
+    const RECT& rc = m_keys[i].rc;
+    l = rc.left   / static_cast<float>(m_w);
+    t = rc.top    / static_cast<float>(m_h);
+    r = rc.right  / static_cast<float>(m_w);
+    b = rc.bottom / static_cast<float>(m_h);
+}
+
+std::string KeyboardOverlay::KeyLabel(int i) const {
+    const std::wstring w = DisplayLabel(i);
+    if (w.empty()) return {};
+    const int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), static_cast<int>(w.size()),
+                                      nullptr, 0, nullptr, nullptr);
+    std::string s(static_cast<size_t>(n), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), static_cast<int>(w.size()),
+                        s.data(), n, nullptr, nullptr);
+    return s;
 }
 
 void KeyboardOverlay::Paint(HDC hdc) {
@@ -232,6 +309,7 @@ void KeyboardOverlay::Paint(HDC hdc) {
     HBRUSH leftBrush = CreateSolidBrush(RGB(60, 170, 90));    // left pad pointer
     HBRUSH rightBrush= CreateSolidBrush(RGB(60, 150, 240));   // right pad pointer
     HBRUSH bothBrush = CreateSolidBrush(RGB(150, 110, 230));  // both on same key
+    HBRUSH modBrush  = CreateSolidBrush(RGB(200, 160, 40));   // active shift/caps
     HPEN   pen      = CreatePen(PS_SOLID, 1, RGB(80, 84, 92));
     HPEN   oldPen   = static_cast<HPEN>(SelectObject(mem, pen));
     SetBkMode(mem, TRANSPARENT);
@@ -244,16 +322,19 @@ void KeyboardOverlay::Paint(HDC hdc) {
         RECT r = m_keys[i].rc;
         InflateRect(&r, -3, -3);
         const bool selL = (i == m_selL), selR = (i == m_selR);
+        const bool sel  = selL || selR;
         HBRUSH b = keyBrush;
-        if (!m_ball) {
+        if (sel && !m_ball) {
             if (selL && selR) b = bothBrush;
             else if (selL)    b = leftBrush;
-            else if (selR)    b = rightBrush;
+            else              b = rightBrush;
+        } else if (IsModActive(i)) {
+            b = modBrush;
         }
         HBRUSH ob = static_cast<HBRUSH>(SelectObject(mem, b));
         RoundRect(mem, r.left, r.top, r.right, r.bottom, 10, 10);
         SelectObject(mem, ob);
-        if (m_ball && (selL || selR)) {
+        if (m_ball && sel) {
             COLORREF c = (selL && selR) ? RGB(150, 110, 230)
                        : selL           ? RGB(60, 170, 90)
                                         : RGB(60, 150, 240);
@@ -265,8 +346,8 @@ void KeyboardOverlay::Paint(HDC hdc) {
             SelectObject(mem, op);
             DeleteObject(hp);
         }
-        DrawTextW(mem, m_keys[i].label.c_str(), -1, &r,
-                  DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        const std::wstring lbl = DisplayLabel(i);
+        DrawTextW(mem, lbl.c_str(), -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
 
     // Floating cursors ("balls"), one per pad, at the continuous pointer spot.
@@ -295,6 +376,7 @@ void KeyboardOverlay::Paint(HDC hdc) {
     DeleteObject(leftBrush);
     DeleteObject(rightBrush);
     DeleteObject(bothBrush);
+    DeleteObject(modBrush);
     DeleteObject(bmp);
     DeleteDC(mem);
 }

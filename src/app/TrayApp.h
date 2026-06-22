@@ -40,6 +40,7 @@ private:
     void DrawStickView(float nx, float ny, float dz);
     void DrawTrackpadView(const char* label, bool touch, bool click,
                           float nx, float ny, float velFrac);
+    void DrawKeyboardPreview(float size);   // live view of the on-screen keyboard
 
     // --- Tray ---
     void AddTrayIcon();
