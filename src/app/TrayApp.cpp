@@ -1190,10 +1190,10 @@ void TrayApp::DrawKeyboardPreview(float availW, float availH) {
         else if (m_keyboard.IsModActive(i))fill = IM_COL32(200, 160, 40, 255);
         dl->AddRectFilled(a, q, fill, 3.0f);
         dl->AddRect(a, q, IM_COL32(80, 84, 92, 255), 3.0f);
-        float sl, st, sr, sb;
-        if (m_keyboard.KeyStem(i, sl, st, sr, sb)) {   // L-shaped Enter: draw the stem too
-            ImVec2 sa(o.x + sl * w + 1, o.y + st * h + 1);
-            ImVec2 sq(o.x + sr * w - 1, o.y + sb * h - 1);
+        float kl, kt, kr, kb;
+        if (m_keyboard.KeyStem(i, kl, kt, kr, kb)) {   // L-shaped Enter: draw the base too
+            ImVec2 sa(o.x + kl * w + 1, o.y + kt * h + 1);
+            ImVec2 sq(o.x + kr * w - 1, o.y + kb * h - 1);
             dl->AddRectFilled(sa, sq, fill, 3.0f);
             dl->AddRect(sa, sq, IM_COL32(80, 84, 92, 255), 3.0f);
         }
