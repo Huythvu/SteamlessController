@@ -799,9 +799,6 @@ void TrayApp::DrawTabs() {
                 if (armed) m_kbRecordTarget = -1;
             }
         }
-        ImGui::Separator();
-        ImGui::TextWrapped("Click a row, then press the controller button to bind it. "
-                           "Right-click a row to clear it.");
         ImGui::EndChild();
         ImGui::EndTabItem();
     } else {

@@ -17,16 +17,16 @@ bool KeyboardOverlay::Init(HINSTANCE hInstance) {
 }
 
 // Build the key grid and pre-compute each key's pixel rectangle so painting and
-// hit-testing share the same geometry. Both layouts fill the (square) board.
+// hit-testing share the same geometry. Both layouts fill the board.
 void KeyboardOverlay::BuildLayout() {
     m_keys.clear();
-    struct Cell { std::wstring label; wchar_t ch; WORD vk; float w; int mod; };
+    struct Cell { std::wstring label; wchar_t ch; WORD vk; float w; int mod; int span; };
     struct Row  { float offset; std::vector<Cell> cells; };  // offset/widths in key units
     std::vector<Row> rows;
 
-    auto C     = [](wchar_t c, float w = 1.0f) -> Cell { return { std::wstring(1, c), c, 0, w, 0 }; };
-    auto Sp    = [](const wchar_t* l, WORD vk, float w) -> Cell { return { l, 0, vk, w, 0 }; };
-    auto Mod   = [](const wchar_t* l, int mod, float w) -> Cell { return { l, 0, 0, w, mod }; };
+    auto C     = [](wchar_t c, float w = 1.0f) -> Cell { return { std::wstring(1, c), c, 0, w, 0, 1 }; };
+    auto Sp    = [](const wchar_t* l, WORD vk, float w) -> Cell { return { l, 0, vk, w, 0, 1 }; };
+    auto Mod   = [](const wchar_t* l, int mod, float w) -> Cell { return { l, 0, 0, w, mod, 1 }; };
     auto chars = [&](const wchar_t* s, std::vector<Cell>& out) {
         for (const wchar_t* p = s; *p; ++p) out.push_back(C(*p));
     };
@@ -39,24 +39,21 @@ void KeyboardOverlay::BuildLayout() {
         { Row r{0.0f,{}}; chars(L"zxcvbnm,.", r.cells); r.cells.push_back(Sp(L"Enter", VK_RETURN, 1.0f)); rows.push_back(std::move(r)); }
         { Row r{0.0f,{}}; r.cells.push_back(Sp(L"Space", VK_SPACE, 10.0f)); rows.push_back(std::move(r)); }
     } else {
-        // ISO-style: staggered, with modifier keys filling the offsets so every
-        // row spans the full width (no empty space). 15 units per row.
+        // ISO-style: staggered with modifier keys filling the offsets, a tall
+        // L-style Enter, and no symbol cluster to the right of p / l / m.
         { Row r{0.0f,{}}; r.cells.push_back(C(L'`'));
           chars(L"1234567890", r.cells);
           r.cells.push_back(C(L'-')); r.cells.push_back(C(L'='));
           r.cells.push_back(Sp(L"<-", VK_BACK, 2.0f)); rows.push_back(std::move(r)); }
         { Row r{0.0f,{}}; r.cells.push_back(Sp(L"Tab", VK_TAB, 1.5f));
           chars(L"qwertyuiop", r.cells);
-          r.cells.push_back(C(L'[')); r.cells.push_back(C(L']'));
-          r.cells.push_back(C(L'\\', 1.5f)); rows.push_back(std::move(r)); }
-        { Row r{0.0f,{}}; r.cells.push_back(Mod(L"Caps", 2, 1.75f));
-          chars(L"asdfghjkl", r.cells);
-          r.cells.push_back(C(L';')); r.cells.push_back(C(L'\''));
-          r.cells.push_back(Sp(L"Enter", VK_RETURN, 2.25f)); rows.push_back(std::move(r)); }
-        { Row r{0.0f,{}}; r.cells.push_back(Mod(L"Shift", 1, 2.0f));
+          r.cells.push_back({ L"Enter", 0, VK_RETURN, 3.5f, 0, 2 });   // tall, spans 2 rows
+          rows.push_back(std::move(r)); }
+        { Row r{0.0f,{}}; r.cells.push_back(Mod(L"Caps", 2, 2.5f));
+          chars(L"asdfghjkl", r.cells); rows.push_back(std::move(r)); }
+        { Row r{0.0f,{}}; r.cells.push_back(Mod(L"Shift", 1, 4.0f));
           chars(L"zxcvbnm", r.cells);
-          r.cells.push_back(C(L',')); r.cells.push_back(C(L'.')); r.cells.push_back(C(L'/'));
-          r.cells.push_back(Mod(L"Shift", 1, 3.0f)); rows.push_back(std::move(r)); }
+          r.cells.push_back(Mod(L"Shift", 1, 4.0f)); rows.push_back(std::move(r)); }
         { Row r{0.0f,{}}; r.cells.push_back(Sp(L"Space", VK_SPACE, 9.0f));
           r.cells.push_back(Sp(L"Lf", VK_LEFT, 1.5f));
           r.cells.push_back(Sp(L"Up", VK_UP,   1.5f));
@@ -82,10 +79,12 @@ void KeyboardOverlay::BuildLayout() {
         for (int ci = 0; ci < n; ++ci) {
             const Cell& c = rows[ri].cells[ci];
             const float w = c.w * unit;
+            const int botRow = ri + c.span - 1;
+            int right = static_cast<int>(x + w);
+            if (m_w - right <= 2) right = m_w;   // close the rounding gap at the edge
             Key k;
-            k.rc    = { static_cast<int>(x), ri * rowH,
-                        (ci == n - 1) ? m_w : static_cast<int>(x + w),
-                        (ri == nRows - 1) ? m_h : (ri + 1) * rowH };
+            k.rc    = { static_cast<int>(x), ri * rowH, right,
+                        (botRow >= nRows - 1) ? m_h : (botRow + 1) * rowH };
             k.label = c.label;
             k.ch    = c.ch;
             k.vk    = c.vk;
@@ -219,10 +218,12 @@ void KeyboardOverlay::Commit(int side) {
 wchar_t KeyboardOverlay::ShiftChar(wchar_t c) {
     if (c >= L'a' && c <= L'z') return static_cast<wchar_t>(c - L'a' + L'A');
     switch (c) {
-        case L'1': return L'!'; case L'2': return L'@'; case L'3': return L'#';
-        case L'4': return L'$'; case L'5': return L'%'; case L'6': return L'^';
-        case L'7': return L'&'; case L'8': return L'*'; case L'9': return L'(';
-        case L'0': return L')'; case L'-': return L'_'; case L'=': return L'+';
+        // Nordic (ISO) shifted number row: ! " # (currency) % & / ( ) =
+        case L'1': return L'!';      case L'2': return L'"';      case L'3': return L'#';
+        case L'4': return static_cast<wchar_t>(0x00A4); case L'5': return L'%'; case L'6': return L'&';
+        case L'7': return L'/';      case L'8': return L'(';      case L'9': return L')';
+        case L'0': return L'=';
+        case L'-': return L'_'; case L'=': return L'+';
         case L'[': return L'{'; case L']': return L'}'; case L'\\': return L'|';
         case L';': return L':'; case L'\'': return L'"'; case L',': return L'<';
         case L'.': return L'>'; case L'/': return L'?'; case L'`': return L'~';
