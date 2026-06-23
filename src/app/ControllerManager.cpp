@@ -407,9 +407,32 @@ void ControllerManager::ReadLoop() {
 
         if (!m_keyboardMode.load()) {
             std::lock_guard<std::mutex> lock(m_inputMutex);
-            uint16_t buttonBits = m_mapper.Process(buf, n);
+            // If a pad uses its hard-click to drive its role (Buttons or D-pad in
+            // "on click" mode), hide that pad's click from the mapper so it does
+            // not ALSO fire the pad-click mapping (e.g. the default middle click).
+            auto consumesClick = [&](PadRole role) {
+                return (role == PadRole::Buttons && m_btnOnClick)
+                    || (role == PadRole::Dpad    && m_dpadOnClick);
+            };
+            const bool maskR = consumesClick(m_padRoleRight);   // source 19 = right pad click
+            const bool maskL = consumesClick(m_padRoleLeft);    // source 20 = left pad click
+            uint16_t buttonBits;
+            if (maskR || maskL) {
+                uint8_t mbuf[64];
+                std::memcpy(mbuf, buf, n);
+                auto clr = [&](int idx) {
+                    const InputMapper::Source& s = InputMapper::kSources[idx];
+                    if (s.byteIndex < n)
+                        mbuf[s.byteIndex] = static_cast<uint8_t>(mbuf[s.byteIndex] & ~s.mask);
+                };
+                if (maskR) clr(19);
+                if (maskL) clr(20);
+                buttonBits = m_mapper.Process(mbuf, n);
+            } else {
+                buttonBits = m_mapper.Process(buf, n);
+            }
             if (m_virtual) m_virtual->Update(buf, n, buttonBits);
-            m_trackpad.Update(buf, n);
+            m_trackpad.Update(buf, n);   // still sees the real click for DoButtons/DoDpad
         } else {
             // Keyboard is open: the trackpads drive it (skip trackpad output),
             // and the keyboard's own buttons are masked from the normal mapping
