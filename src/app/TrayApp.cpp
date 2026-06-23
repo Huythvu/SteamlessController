@@ -731,10 +731,27 @@ void TrayApp::DrawTabs() {
             { "Backspace",     4 }, { "Space",       5 }, { "Enter", 6 },
         };
 
+        const ImGuiStyle& style = ImGui::GetStyle();
+        // Size the remap column to its widest possible content (longest function
+        // name + 16px gap + longest button value) plus table/child padding, so it
+        // never overflows regardless of which buttons are bound.
+        float kbNameW = 0.0f;
+        for (const KbBind& b : kBinds) {
+            float ww = ImGui::CalcTextSize(b.name).x;
+            if (ww > kbNameW) kbNameW = ww;
+        }
+        float kbValW = ImGui::CalcTextSize("press a button...").x;
+        for (int i = 0; i < InputMapper::kSourceCount; ++i) {
+            float ww = ImGui::CalcTextSize(Narrow(InputMapper::kSources[i].name).c_str()).x;
+            if (ww > kbValW) kbValW = ww;
+        }
+        const float kbGap = 16.0f;
         const ImVec2 avail = ImGui::GetContentRegionAvail();
-        const float  rightW = 230.0f;                  // wide enough for the binding text
-        float leftW = avail.x - rightW - ImGui::GetStyle().ItemSpacing.x;
-        if (leftW < 260.0f) leftW = avail.x * 0.6f;    // narrow-window fallback
+        float rightW = kbNameW + kbGap + kbValW
+                     + style.CellPadding.x * 4.0f + style.WindowPadding.x * 2.0f
+                     + style.ScrollbarSize + 4.0f;
+        float leftW = avail.x - rightW - style.ItemSpacing.x;
+        if (leftW < 240.0f) { leftW = avail.x * 0.55f; rightW = 0.0f; }  // narrow-window fallback
 
         // --- left column: settings + a live preview, filling the height ---
         ImGui::BeginChild("kbleft", ImVec2(leftW, avail.y), true);
@@ -790,15 +807,9 @@ void TrayApp::DrawTabs() {
         ImGui::BeginChild("kbremap", ImVec2(0, avail.y), true);
         ImGui::TextDisabled("FUNCTION -> BUTTON");
         ImGui::Separator();
-        // Fixed name column = longest label + a 16px gap, so the values align.
-        float kbNameW = 0.0f;
-        for (const KbBind& b : kBinds) {
-            float ww = ImGui::CalcTextSize(b.name).x;
-            if (ww > kbNameW) kbNameW = ww;
-        }
         if (ImGui::BeginTable("kbmap", 2, ImGuiTableFlags_SizingFixedFit)) {
-            ImGui::TableSetupColumn("f", ImGuiTableColumnFlags_WidthFixed, kbNameW + 16.0f);
-            ImGui::TableSetupColumn("v", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("f", ImGuiTableColumnFlags_WidthFixed, kbNameW + kbGap);
+            ImGui::TableSetupColumn("v", ImGuiTableColumnFlags_WidthFixed, kbValW);
             for (const KbBind& b : kBinds) {
                 const int  cur   = kbGet(b.target);
                 const bool armed = (m_kbRecordTarget == b.target);
