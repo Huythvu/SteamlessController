@@ -48,6 +48,7 @@ public:
     std::string KeyLabel(int i) const;          // display label (honours shift/caps), UTF-8
     bool IsModKey(int i) const;                 // shift/caps key
     bool IsModActive(int i) const;              // that modifier is currently on
+    WORD KeyVk(int i) const { return (i >= 0 && i < static_cast<int>(m_keys.size())) ? m_keys[i].vk : 0; }
     float CursorX(int side) const { return m_cx[side]; }
     float CursorY(int side) const { return m_cy[side]; }
     float AspectRatio() const { return static_cast<float>(m_w) / static_cast<float>(m_h); }

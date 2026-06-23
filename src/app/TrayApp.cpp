@@ -545,6 +545,19 @@ static const char* MouseBtnShort(int b) {
                  case 4: return "B"; case 5: return "F"; default: return "-"; }
 }
 
+// Compact label for a controller source button (initials for multi-word names),
+// for the small keyboard-key accents (e.g. "Right Bumper" -> "RB").
+static std::string ShortBtn(const char* name) {
+    std::string s = name;
+    if (s.size() <= 5) return s;
+    std::string out; bool start = true;
+    for (char ch : s) {
+        if (ch == ' ' || ch == '-') { start = true; continue; }
+        if (start) { out += (ch >= 'a' && ch <= 'z') ? static_cast<char>(ch - 32) : ch; start = false; }
+    }
+    return out.empty() ? s : out;
+}
+
 // Short label for a virtual-key code (used by the D-pad key remap). Named keys
 // are matched first because several (arrows, nav keys) share code points with
 // printable ASCII punctuation.
@@ -1477,6 +1490,26 @@ void TrayApp::DrawKeyboardPreview(float availW, float availH) {
                 dl->AddText(ImVec2((a.x + q.x) * 0.5f - ts.x * 0.5f,
                                    (a.y + q.y) * 0.5f - ts.y * 0.5f),
                             IM_COL32(235, 237, 240, 255), lbl.c_str());
+        }
+
+        // Accent badge: the controller button mapped to Space / Backspace / Enter.
+        const WORD vk = m_keyboard.KeyVk(i);
+        int srcIdx = -1;
+        if      (vk == VK_RETURN) srcIdx = m_controller->GetKbKeyEnter();
+        else if (vk == VK_SPACE)  srcIdx = m_controller->GetKbKeySpace();
+        else if (vk == VK_BACK)   srcIdx = m_controller->GetKbKeyBackspace();
+        if (srcIdx >= 0 && srcIdx < InputMapper::kSourceCount) {
+            std::string bn = ShortBtn(Narrow(InputMapper::kSources[srcIdx].name).c_str());
+            ImVec2 ts = ImGui::CalcTextSize(bn.c_str());
+            float ax0 = a.x, ax1 = q.x, ay0 = a.y;   // badge at the top of the key
+            float kl, kt, kr, kb;
+            if (vk == VK_RETURN && m_keyboard.KeyStem(i, kl, kt, kr, kb)) {
+                ax0 = o.x + kl * w; ax1 = o.x + kr * w; ay0 = o.y + kt * h;   // use the wider base
+            }
+            ImVec2 tp((ax0 + ax1) * 0.5f - ts.x * 0.5f, ay0 + 2.0f);
+            dl->AddRectFilled(ImVec2(tp.x - 3, tp.y - 1), ImVec2(tp.x + ts.x + 3, tp.y + ts.y + 1),
+                              IM_COL32(210, 160, 40, 235), 3.0f);
+            dl->AddText(tp, IM_COL32(20, 20, 22, 255), bn.c_str());
         }
     }
 }
