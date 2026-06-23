@@ -1502,9 +1502,9 @@ void TrayApp::DrawKeyboardPreview(float availW, float availH) {
             std::string bn = ShortBtn(Narrow(InputMapper::kSources[srcIdx].name).c_str());
             ImVec2 ts = ImGui::CalcTextSize(bn.c_str());
             float ax0 = a.x, ax1 = q.x, ay0 = a.y;   // badge at the top of the key
-            float kl, kt, kr, kb;
-            if (vk == VK_RETURN && m_keyboard.KeyStem(i, kl, kt, kr, kb)) {
-                ax0 = o.x + kl * w; ax1 = o.x + kr * w; ay0 = o.y + kt * h;   // use the wider base
+            float el, et, er, eb;
+            if (vk == VK_RETURN && m_keyboard.KeyStem(i, el, et, er, eb)) {
+                ax0 = o.x + el * w; ax1 = o.x + er * w; ay0 = o.y + et * h;   // use the wider base
             }
             ImVec2 tp((ax0 + ax1) * 0.5f - ts.x * 0.5f, ay0 + 2.0f);
             dl->AddRectFilled(ImVec2(tp.x - 3, tp.y - 1), ImVec2(tp.x + ts.x + 3, tp.y + ts.y + 1),
