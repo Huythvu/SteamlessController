@@ -592,18 +592,35 @@ void TrayApp::DrawTabs() {
             if (ImGui::Checkbox("Use WASD instead of arrow keys", &wasd)) {
                 c.SetDpadWASD(wasd); SaveSettings();
             }
+            bool single = c.IsDpadSingle();
+            if (ImGui::Checkbox("One direction at a time (no diagonals)", &single)) {
+                c.SetDpadSingle(single); SaveSettings();
+            }
+            bool dclick = c.IsDpadOnClick();
+            if (ImGui::Checkbox("Activate on click (instead of touch)##dpad", &dclick)) {
+                c.SetDpadOnClick(dclick); SaveSettings();
+            }
         }
         if (hasRole(PadRole::Stick)) {
             ImGui::Spacing(); ImGui::Separator();
             ImGui::TextDisabled("GAMEPAD STICK");
-            ImGui::TextWrapped("The pad drives the virtual controller's RIGHT stick "
-                               "(uses the right-stick deadzone/curve on the Sticks tab).");
+            ImGui::TextWrapped("The pad drives the virtual controller's RIGHT stick (aim).");
+            slider("Stick deadzone", c.GetPadStickDeadzone(), 0, 90,
+                   &ControllerManager::SetPadStickDeadzone);
         }
         if (hasRole(PadRole::Buttons)) {
             ImGui::Spacing(); ImGui::Separator();
             ImGui::TextDisabled("MOUSE BUTTONS");
-            ImGui::TextWrapped("Touch the left / middle / right third of the pad for a "
+            ImGui::TextWrapped("Left / middle / right third of the pad = "
                                "left / middle / right click.");
+            bool bclick = c.IsButtonsOnClick();
+            if (ImGui::Checkbox("Activate on click (instead of touch)##btn", &bclick)) {
+                c.SetButtonsOnClick(bclick); SaveSettings();
+            }
+            bool bswap = c.IsButtonsSwap();
+            if (ImGui::Checkbox("Swap left / right click zones", &bswap)) {
+                c.SetButtonsSwap(bswap); SaveSettings();
+            }
         }
 
         // --- live view ---
@@ -645,11 +662,23 @@ void TrayApp::DrawTabs() {
         char lbl[64], rbl[64];
         std::snprintf(lbl, sizeof(lbl), "Left pad (%s)",  PadRoleName(static_cast<PadRole>(lRole)));
         std::snprintf(rbl, sizeof(rbl), "Right pad (%s)", PadRoleName(static_cast<PadRole>(rRole)));
-        const bool  wasd    = c.IsDpadWASD();
-        const float stickDz = c.GetRightDeadzone() / 100.0f;
-        DrawTrackpadView(lbl, lRole, lt, lc, lx / 32767.0f, ly / 32767.0f, fracFor(lRole), wasd, stickDz);
+        const float stickDz = c.GetPadStickDeadzone() / 100.0f;
+        auto actOnClick = [&](int role) {
+            return (role == static_cast<int>(PadRole::Dpad)    && c.IsDpadOnClick())
+                || (role == static_cast<int>(PadRole::Buttons) && c.IsButtonsOnClick());
+        };
+        auto makeView = [&](int role, bool t, bool clk, int16_t x, int16_t y) {
+            PadView v;
+            v.role = role; v.touch = t; v.click = clk;
+            v.nx = x / 32767.0f; v.ny = y / 32767.0f; v.velFrac = fracFor(role);
+            v.dpadWASD = c.IsDpadWASD(); v.dpadSingle = c.IsDpadSingle();
+            v.actOnClick = actOnClick(role); v.btnSwap = c.IsButtonsSwap();
+            v.stickDz = stickDz;
+            return v;
+        };
+        DrawTrackpadView(lbl, makeView(lRole, lt, lc, lx, ly));
         ImGui::SameLine(0, 24);
-        DrawTrackpadView(rbl, rRole, rt, rc, rx / 32767.0f, ry / 32767.0f, fracFor(rRole), wasd, stickDz);
+        DrawTrackpadView(rbl, makeView(rRole, rt, rc, rx, ry));
         ImGui::EndTabItem();
     }
 
@@ -1194,9 +1223,7 @@ void TrayApp::DrawStickView(float nx, float ny, float dz) {
 // A live, role-aware trackpad view: the square pad with the touch dot, plus an
 // overlay that illustrates what the pad's role actually does (mouse movement
 // bar, scroll axes, D-pad zones, stick deadzone ring, or mouse-button thirds).
-void TrayApp::DrawTrackpadView(const char* label, int role, bool touch, bool click,
-                               float nx, float ny, float velFrac,
-                               bool dpadWASD, float stickDz) {
+void TrayApp::DrawTrackpadView(const char* label, const PadView& v) {
     ImGui::BeginGroup();
     ImGui::TextUnformatted(label);
 
@@ -1211,11 +1238,11 @@ void TrayApp::DrawTrackpadView(const char* label, int role, bool touch, bool cli
     ImU32 blue   = IM_COL32(80, 180, 255, 255);
     ImVec2 ctr((a.x + b.x) / 2, (a.y + b.y) / 2);
     const float half = sz / 2 - 6;
-    const float px = nx < -1 ? -1 : (nx > 1 ? 1 : nx);
-    const float py = ny < -1 ? -1 : (ny > 1 ? 1 : ny);   // +py = up
+    const float px = v.nx < -1 ? -1 : (v.nx > 1 ? 1 : v.nx);
+    const float py = v.ny < -1 ? -1 : (v.ny > 1 ? 1 : v.ny);   // +py = up
 
-    dl->AddRectFilled(a, b, click ? IM_COL32(45, 110, 60, 255) : bg, 12.0f);
-    dl->AddRect(a, b, touch ? blue : border, 12.0f);
+    dl->AddRectFilled(a, b, v.click ? IM_COL32(45, 110, 60, 255) : bg, 12.0f);
+    dl->AddRect(a, b, v.touch ? blue : border, 12.0f);
 
     auto label2 = [&](float cx, float cy, const char* s, bool on) {
         ImVec2 ts = ImGui::CalcTextSize(s);
@@ -1224,8 +1251,10 @@ void TrayApp::DrawTrackpadView(const char* label, int role, bool touch, bool cli
         dl->AddText(ImVec2(cx - ts.x/2, cy - ts.y/2), on ? green : border, s);
     };
 
+    // The role only acts when this is true (touch, or a hard press if on-click).
+    const bool acting = v.actOnClick ? v.click : v.touch;
     const char* footer = "";
-    const auto Role = static_cast<PadRole>(role);
+    const auto Role = static_cast<PadRole>(v.role);
 
     if (Role == PadRole::Dpad) {
         // Cross + center deadzone + the four direction labels, lit when held.
@@ -1233,54 +1262,58 @@ void TrayApp::DrawTrackpadView(const char* label, int role, bool touch, bool cli
         dl->AddLine(ImVec2(a.x, ctr.y), ImVec2(b.x, ctr.y), border);
         dl->AddLine(ImVec2(ctr.x, a.y), ImVec2(ctr.x, b.y), border);
         dl->AddCircle(ctr, half * ddz, IM_COL32(210, 80, 80, 200), 32);
-        const bool up = touch && py > ddz, dn = touch && py < -ddz;
-        const bool lf = touch && nx < -ddz, rt = touch && nx > ddz;
-        label2(ctr.x,           ctr.y - half*0.72f, dpadWASD ? "W" : "Up",   up);
-        label2(ctr.x,           ctr.y + half*0.72f, dpadWASD ? "S" : "Dn",   dn);
-        label2(ctr.x - half*0.72f, ctr.y,           dpadWASD ? "A" : "Lt",   lf);
-        label2(ctr.x + half*0.72f, ctr.y,           dpadWASD ? "D" : "Rt",   rt);
-        footer = touch ? "holding direction key(s)" : "directional keys";
+        const float aax = px < 0 ? -px : px, aay = py < 0 ? -py : py;
+        bool up = acting && py >  ddz, dn = acting && py < -ddz;
+        bool lf = acting && px < -ddz, rt = acting && px >  ddz;
+        if (v.dpadSingle) {   // only the dominant axis lights
+            if (aax >= aay) { up = dn = false; } else { lf = rt = false; }
+        }
+        label2(ctr.x,              ctr.y - half*0.72f, v.dpadWASD ? "W" : "Up", up);
+        label2(ctr.x,              ctr.y + half*0.72f, v.dpadWASD ? "S" : "Dn", dn);
+        label2(ctr.x - half*0.72f, ctr.y,              v.dpadWASD ? "A" : "Lt", lf);
+        label2(ctr.x + half*0.72f, ctr.y,              v.dpadWASD ? "D" : "Rt", rt);
+        footer = v.actOnClick ? "click + direction" : "touch a direction";
     } else if (Role == PadRole::Stick) {
         // Deadzone ring + the aim dot (centered when not touching).
         dl->AddCircle(ctr, half, border, 48);
-        if (stickDz > 0.0f) dl->AddCircle(ctr, half * stickDz, IM_COL32(210, 80, 80, 200), 32);
-        ImVec2 d = touch ? ImVec2(ctr.x + px*half, ctr.y - py*half) : ctr;
+        if (v.stickDz > 0.0f) dl->AddCircle(ctr, half * v.stickDz, IM_COL32(210, 80, 80, 200), 32);
+        ImVec2 d = v.touch ? ImVec2(ctr.x + px*half, ctr.y - py*half) : ctr;
         dl->AddLine(ctr, d, IM_COL32(120,124,132,255), 2.0f);
         dl->AddCircleFilled(d, 7.0f, blue);
         footer = "right stick (aim)";
     } else if (Role == PadRole::Buttons) {
-        // Three vertical zones: L / M / R, the touched one lit.
+        // Three vertical zones (outer two swappable), the active one lit.
         const float t1 = a.x + sz/3.0f, t2 = a.x + 2.0f*sz/3.0f;
         dl->AddLine(ImVec2(t1, a.y), ImVec2(t1, b.y), border);
         dl->AddLine(ImVec2(t2, a.y), ImVec2(t2, b.y), border);
-        const int zone = !touch ? 0 : (nx < -1.0f/3 ? 1 : (nx > 1.0f/3 ? 2 : 3));  // 1=L 2=R 3=M
+        const int zone = !acting ? 0 : (v.nx < -1.0f/3 ? 1 : (v.nx > 1.0f/3 ? 2 : 3));  // 1=L 2=R 3=M
         if (zone) {
             float zl = zone==1 ? a.x : zone==3 ? t1 : t2;
             float zr = zone==1 ? t1  : zone==3 ? t2 : b.x;
             dl->AddRectFilled(ImVec2(zl, a.y), ImVec2(zr, b.y), greenF);
         }
-        label2((a.x+t1)/2, ctr.y, "L", zone==1);
-        label2((t1+t2)/2,  ctr.y, "M", zone==3);
-        label2((t2+b.x)/2, ctr.y, "R", zone==2);
-        footer = "mouse button zones";
+        label2((a.x+t1)/2, ctr.y, v.btnSwap ? "R" : "L", zone==1);
+        label2((t1+t2)/2,  ctr.y, "M",                   zone==3);
+        label2((t2+b.x)/2, ctr.y, v.btnSwap ? "L" : "R", zone==2);
+        footer = v.actOnClick ? "click a zone" : "touch a zone";
     } else {
         // Mouse / Scroll / Off: just the touch dot.
-        if (touch) dl->AddCircleFilled(ImVec2(ctr.x + px*half, ctr.y - py*half), 7.0f, blue);
+        if (v.touch) dl->AddCircleFilled(ImVec2(ctr.x + px*half, ctr.y - py*half), 7.0f, blue);
         footer = Role == PadRole::Mouse  ? "mouse movement"
                : Role == PadRole::Scroll ? "scroll"
                : "off";
     }
     ImGui::Dummy(ImVec2(sz, sz));
 
-    ImGui::TextDisabled("%s   %s", touch ? "TOUCH" : "touch", click ? "CLICK" : "click");
+    ImGui::TextDisabled("%s   %s", v.touch ? "TOUCH" : "touch", v.click ? "CLICK" : "click");
 
     // Mouse / Scroll get the movement-vs-deadzone bar; other roles get a caption.
     if (Role == PadRole::Mouse || Role == PadRole::Scroll) {
         ImVec2 bp = ImGui::GetCursorScreenPos();
         const float bw = sz, bh = 14.0f;
         ImVec2 ba = bp, bb = ImVec2(bp.x + bw, bp.y + bh);
-        float f = velFrac < 0 ? 0 : (velFrac > 1 ? 1 : velFrac);
-        bool active = velFrac >= 0.5f;
+        float f = v.velFrac < 0 ? 0 : (v.velFrac > 1 ? 1 : v.velFrac);
+        bool active = v.velFrac >= 0.5f;
         dl->AddRectFilled(ba, bb, bg, 4.0f);
         dl->AddRectFilled(ba, ImVec2(bp.x + bw * f, bp.y + bh),
                           active ? green : IM_COL32(110, 115, 125, 255), 4.0f);
@@ -1575,6 +1608,11 @@ void TrayApp::LoadProfileSettings(HKEY key) {
     m_controller->SetPadRole(0, static_cast<int>(prR));
     m_controller->SetPadRole(1, static_cast<int>(prL));
     m_controller->SetDpadWASD            (rb(L"DpadWASD",        false));
+    m_controller->SetDpadSingle          (rb(L"DpadSingle",      false));
+    m_controller->SetDpadOnClick         (rb(L"DpadOnClick",     false));
+    m_controller->SetButtonsOnClick      (rb(L"BtnOnClick",      false));
+    m_controller->SetButtonsSwap         (rb(L"BtnSwap",         false));
+    m_controller->SetPadStickDeadzone    (static_cast<int>(rd(L"PadStickDz", 10)));
     m_controller->SetInvertScroll        (rb(L"InvertScroll",    false));
     m_controller->SetSmartScroll         (rb(L"SmartScroll",     false));
     m_controller->SetTrackpadSensitivity (static_cast<int>(rd(L"TrackpadSensitivity", 35)));
@@ -1631,6 +1669,11 @@ void TrayApp::SaveProfileSettings(HKEY key) {
     wd(L"PadRoleRight",    static_cast<DWORD>(m_controller->GetPadRole(0)));
     wd(L"PadRoleLeft",     static_cast<DWORD>(m_controller->GetPadRole(1)));
     wb(L"DpadWASD",        m_controller->IsDpadWASD());
+    wb(L"DpadSingle",      m_controller->IsDpadSingle());
+    wb(L"DpadOnClick",     m_controller->IsDpadOnClick());
+    wb(L"BtnOnClick",      m_controller->IsButtonsOnClick());
+    wb(L"BtnSwap",         m_controller->IsButtonsSwap());
+    wd(L"PadStickDz",      static_cast<DWORD>(m_controller->GetPadStickDeadzone()));
     wb(L"InvertScroll",    m_controller->IsInvertScroll());
     wb(L"SmartScroll",     m_controller->IsSmartScroll());
     wb(L"HapticOnClick",   m_controller->IsHapticOnClick());

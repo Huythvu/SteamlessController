@@ -63,6 +63,11 @@ public:
     int  GetPadRole(int side) const { return static_cast<int>(side == 1 ? m_padRoleLeft : m_padRoleRight); }
     void SetDpadWASD(bool wasd);
     bool IsDpadWASD() const { return m_dpadWASD; }
+    void SetDpadSingle(bool b);     bool IsDpadSingle() const     { return m_dpadSingle; }
+    void SetDpadOnClick(bool b);    bool IsDpadOnClick() const    { return m_dpadOnClick; }
+    void SetButtonsOnClick(bool b); bool IsButtonsOnClick() const { return m_btnOnClick; }
+    void SetButtonsSwap(bool b);    bool IsButtonsSwap() const    { return m_btnSwap; }
+    void SetPadStickDeadzone(int pos); int GetPadStickDeadzone() const { return m_padStickDz; }  // 0..90
     void SetInvertScroll(bool enabled);
     void SetSmartScroll(bool enabled);
     void SetTrackpadSensitivity(int pos);   // 1..100
@@ -158,6 +163,11 @@ private:
     PadRole                            m_padRoleRight         = PadRole::Mouse;
     PadRole                            m_padRoleLeft          = PadRole::Scroll;
     bool                               m_dpadWASD             = false;
+    bool                               m_dpadSingle           = false;
+    bool                               m_dpadOnClick          = false;
+    bool                               m_btnOnClick           = false;
+    bool                               m_btnSwap              = false;
+    int                                m_padStickDz           = 10;    // 0..90 (%)
     bool                               m_invertScroll         = false;
     bool                               m_smartScroll          = false;
     std::atomic<bool>                  m_trackpadSuspended{false};

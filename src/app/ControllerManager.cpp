@@ -86,10 +86,17 @@ void ControllerManager::EnableGameMode() {
         m_trackpad.SetRole(0, m_padRoleRight);
         m_trackpad.SetRole(1, m_padRoleLeft);
         m_trackpad.SetDpadWASD(m_dpadWASD);
+        m_trackpad.SetDpadSingle(m_dpadSingle);
+        m_trackpad.SetDpadOnClick(m_dpadOnClick);
+        m_trackpad.SetButtonsOnClick(m_btnOnClick);
+        m_trackpad.SetButtonsSwap(m_btnSwap);
         m_trackpad.SetSuspended(susp);
-        if (m_virtual) m_virtual->SetPadStick(
-            m_padRoleRight == PadRole::Stick ? 0 :
-            m_padRoleLeft  == PadRole::Stick ? 1 : -1);
+        if (m_virtual) {
+            m_virtual->SetPadStick(
+                m_padRoleRight == PadRole::Stick ? 0 :
+                m_padRoleLeft  == PadRole::Stick ? 1 : -1);
+            m_virtual->SetPadStickDeadzone(m_padStickDz / 100.0f);
+        }
         m_trackpad.SetInvertScroll(m_invertScroll);
         m_trackpad.SetSmartScroll(m_smartScroll);
         m_trackpad.SetSensitivity(MouseSensFromPos(m_trackpadSensitivity));
@@ -132,15 +139,52 @@ void ControllerManager::SetDpadWASD(bool wasd) {
     m_trackpad.SetDpadWASD(wasd);
 }
 
+void ControllerManager::SetDpadSingle(bool b) {
+    m_dpadSingle = b;
+    std::lock_guard<std::mutex> lock(m_inputMutex);
+    m_trackpad.SetDpadSingle(b);
+}
+
+void ControllerManager::SetDpadOnClick(bool b) {
+    m_dpadOnClick = b;
+    std::lock_guard<std::mutex> lock(m_inputMutex);
+    m_trackpad.SetDpadOnClick(b);
+}
+
+void ControllerManager::SetButtonsOnClick(bool b) {
+    m_btnOnClick = b;
+    std::lock_guard<std::mutex> lock(m_inputMutex);
+    m_trackpad.SetButtonsOnClick(b);
+}
+
+void ControllerManager::SetButtonsSwap(bool b) {
+    m_btnSwap = b;
+    std::lock_guard<std::mutex> lock(m_inputMutex);
+    m_trackpad.SetButtonsSwap(b);
+}
+
+void ControllerManager::SetPadStickDeadzone(int pos) {
+    m_padStickDz = pos < 0 ? 0 : (pos > 90 ? 90 : pos);
+    std::lock_guard<std::mutex> lock(m_inputMutex);
+    if (m_virtual) m_virtual->SetPadStickDeadzone(m_padStickDz / 100.0f);
+}
+
 void ControllerManager::ApplyPadRoles() {
     std::lock_guard<std::mutex> lock(m_inputMutex);
     m_trackpad.Reset();
     m_trackpad.SetRole(0, m_padRoleRight);
     m_trackpad.SetRole(1, m_padRoleLeft);
     m_trackpad.SetDpadWASD(m_dpadWASD);
-    if (m_virtual) m_virtual->SetPadStick(
-        m_padRoleRight == PadRole::Stick ? 0 :
-        m_padRoleLeft  == PadRole::Stick ? 1 : -1);
+    m_trackpad.SetDpadSingle(m_dpadSingle);
+    m_trackpad.SetDpadOnClick(m_dpadOnClick);
+    m_trackpad.SetButtonsOnClick(m_btnOnClick);
+    m_trackpad.SetButtonsSwap(m_btnSwap);
+    if (m_virtual) {
+        m_virtual->SetPadStick(
+            m_padRoleRight == PadRole::Stick ? 0 :
+            m_padRoleLeft  == PadRole::Stick ? 1 : -1);
+        m_virtual->SetPadStickDeadzone(m_padStickDz / 100.0f);
+    }
 }
 
 void ControllerManager::SetHapticOnClick(bool enabled) {

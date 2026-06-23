@@ -116,7 +116,7 @@ void VirtualController::Update(const uint8_t* buf, size_t n, uint16_t buttonBits
             int16_t px, py;
             memcpy(&px, buf + (left ? 18 : 24), 2);
             memcpy(&py, buf + (left ? 20 : 26), 2);
-            ApplyStick(px, py, m_dzR, m_expR, report.sThumbRX, report.sThumbRY);
+            ApplyStick(px, py, m_padStickDz, m_expR, report.sThumbRX, report.sThumbRY);
         } else {
             report.sThumbRX = 0;
             report.sThumbRY = 0;

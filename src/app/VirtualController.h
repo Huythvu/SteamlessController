@@ -21,6 +21,7 @@ public:
     // Drive the virtual RIGHT stick from a trackpad's touch position instead of
     // the physical stick. side: -1 = off, 0 = right pad, 1 = left pad.
     void SetPadStick(int side) { m_padStick = side; }
+    void SetPadStickDeadzone(float dz) { m_padStickDz = dz; }   // 0..1 radial deadzone
 
 private:
     void* m_client       = nullptr;
@@ -33,4 +34,5 @@ private:
     float m_dzR  = 0.10f;
     float m_expR = 1.0f;
     int   m_padStick = -1;   // -1 = off, 0 = right pad, 1 = left pad drives RS
+    float m_padStickDz = 0.10f;
 };

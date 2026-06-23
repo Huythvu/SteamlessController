@@ -11,6 +11,10 @@ public:
     void SetRole(int side, PadRole role)         { if (side >= 0 && side < 2) m_role[side] = role; }
     PadRole GetRole(int side) const              { return (side >= 0 && side < 2) ? m_role[side] : PadRole::Off; }
     void SetDpadWASD(bool wasd)                  { m_dpadWASD = wasd; }
+    void SetDpadSingle(bool single)              { m_dpadSingle = single; }   // one direction at a time
+    void SetDpadOnClick(bool onClick)            { m_dpadOnClick = onClick; } // require a hard press
+    void SetButtonsOnClick(bool onClick)         { m_btnOnClick = onClick; }
+    void SetButtonsSwap(bool swap)               { m_btnSwap = swap; }         // swap L/R click zones
     void SetSuspended(bool s)                    { m_suspended = s; }
 
     void SetInvertScroll(bool enabled)           { m_invertScroll       = enabled; }
@@ -73,6 +77,10 @@ private:
 
     PadRole  m_role[2]            = { PadRole::Mouse, PadRole::Scroll };  // right, left
     bool     m_dpadWASD           = false;
+    bool     m_dpadSingle         = false;
+    bool     m_dpadOnClick        = false;
+    bool     m_btnOnClick         = false;
+    bool     m_btnSwap            = false;
     bool     m_suspended          = false;
     bool     m_invertScroll       = false;
     bool     m_smartScroll        = false;

@@ -159,12 +159,22 @@ void TrackpadMouse::ApplyDpad(PadState& ps, int want) {
 
 void TrackpadMouse::DoDpad(PadState& ps, const Pad& pad) {
     int want = 0;
-    if (pad.touching) {
-        const int dz = 8000;                       // center deadzone (~25%)
-        if (pad.y >  dz) want |= 1;                 // up
-        if (pad.y < -dz) want |= 2;                 // down
-        if (pad.x < -dz) want |= 4;                 // left
-        if (pad.x >  dz) want |= 8;                 // right
+    const bool active = pad.touching && (!m_dpadOnClick || pad.clicking);
+    if (active) {
+        const int dz  = 8000;                       // center deadzone (~25%)
+        const int ax  = pad.x, ay = pad.y;
+        const int aax = ax < 0 ? -ax : ax;
+        const int aay = ay < 0 ? -ay : ay;
+        if (m_dpadSingle) {
+            // Only the dominant axis fires (no diagonals).
+            if (aax >= aay) { if (ax < -dz) want |= 4; else if (ax > dz) want |= 8; }
+            else            { if (ay >  dz) want |= 1; else if (ay < -dz) want |= 2; }
+        } else {
+            if (ay >  dz) want |= 1;                 // up
+            if (ay < -dz) want |= 2;                 // down
+            if (ax < -dz) want |= 4;                 // left
+            if (ax >  dz) want |= 8;                 // right
+        }
     }
     ApplyDpad(ps, want);
 }
@@ -179,14 +189,17 @@ void TrackpadMouse::ReleaseButtons(PadState& ps) {
 }
 
 void TrackpadMouse::DoButtons(PadState& ps, const Pad& pad) {
-    if (pad.touching && ps.btnHeld == 0) {
-        // Three vertical zones: left = left click, middle = middle, right = right.
-        const int btn = pad.x < -10922 ? 1 : (pad.x > 10922 ? 2 : 3);
+    const bool active = m_btnOnClick ? pad.clicking : pad.touching;
+    if (active && ps.btnHeld == 0) {
+        // Three vertical zones; the outer two can be swapped (1=L 2=R 3=M).
+        const int lb = m_btnSwap ? 2 : 1;
+        const int rb = m_btnSwap ? 1 : 2;
+        const int btn = pad.x < -10922 ? lb : (pad.x > 10922 ? rb : 3);
         const DWORD down[4] = { 0, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_MIDDLEDOWN };
         INPUT in{}; in.type = INPUT_MOUSE; in.mi.dwFlags = down[btn];
         SendInput(1, &in, sizeof(INPUT));
         ps.btnHeld = btn;
-    } else if (!pad.touching && ps.btnHeld != 0) {
+    } else if (!active && ps.btnHeld != 0) {
         ReleaseButtons(ps);
     }
 }

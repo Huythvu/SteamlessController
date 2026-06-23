@@ -38,9 +38,19 @@ private:
     void DrawTabs();
     void DrawControllerTab();
     void DrawStickView(float nx, float ny, float dz);
-    void DrawTrackpadView(const char* label, int role, bool touch, bool click,
-                          float nx, float ny, float velFrac,
-                          bool dpadWASD, float stickDz);
+    struct PadView {
+        int   role       = 0;
+        bool  touch      = false;
+        bool  click      = false;
+        float nx = 0.0f, ny = 0.0f;
+        float velFrac    = 0.0f;
+        bool  dpadWASD   = false;
+        bool  dpadSingle = false;
+        bool  actOnClick = false;   // role activates on hard press instead of touch
+        bool  btnSwap    = false;
+        float stickDz    = 0.10f;
+    };
+    void DrawTrackpadView(const char* label, const PadView& v);
     void DrawKeyboardPreview(float availW, float availH);   // static layout preview
 
     // --- Tray ---
