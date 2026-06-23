@@ -545,19 +545,27 @@ static const char* MouseBtnShort(int b) {
                  case 4: return "B"; case 5: return "F"; default: return "-"; }
 }
 
-// Short label for a virtual-key code (used by the D-pad corner-key remap).
+// Short label for a virtual-key code (used by the D-pad key remap). Named keys
+// are matched first because several (arrows, nav keys) share code points with
+// printable ASCII punctuation.
 static std::string VkLabel(int vk) {
     if (vk == 0) return "-";
-    if (vk >= 0x21 && vk <= 0x7E) return std::string(1, static_cast<char>(vk));
     switch (vk) {
-        case VK_SPACE:  return "Spc";  case VK_RETURN: return "Ent";
-        case VK_TAB:    return "Tab";  case VK_ESCAPE: return "Esc";
-        case VK_BACK:   return "Bksp"; case VK_LSHIFT: case VK_RSHIFT: case VK_SHIFT: return "Sh";
-        case VK_LCONTROL: case VK_RCONTROL: case VK_CONTROL: return "Ctl";
-        case VK_UP:     return "Up";   case VK_DOWN:  return "Dn";
-        case VK_LEFT:   return "Lt";   case VK_RIGHT: return "Rt";
+        case VK_UP:     return "Up";    case VK_DOWN:  return "Down";
+        case VK_LEFT:   return "Left";  case VK_RIGHT: return "Right";
+        case VK_SPACE:  return "Space"; case VK_RETURN: return "Enter";
+        case VK_TAB:    return "Tab";   case VK_ESCAPE: return "Esc";
+        case VK_BACK:   return "Bksp";
+        case VK_LSHIFT: case VK_RSHIFT: case VK_SHIFT:   return "Shift";
+        case VK_LCONTROL: case VK_RCONTROL: case VK_CONTROL: return "Ctrl";
+        case VK_LMENU: case VK_RMENU: case VK_MENU:      return "Alt";
+        case VK_HOME:   return "Home";  case VK_END:   return "End";
+        case VK_PRIOR:  return "PgUp";  case VK_NEXT:  return "PgDn";
+        case VK_INSERT: return "Ins";   case VK_DELETE: return "Del";
     }
-    char b[16]; std::snprintf(b, sizeof(b), "%d", vk);
+    if ((vk >= '0' && vk <= '9') || (vk >= 'A' && vk <= 'Z'))
+        return std::string(1, static_cast<char>(vk));
+    char b[16]; std::snprintf(b, sizeof(b), "VK%d", vk);
     return b;
 }
 
