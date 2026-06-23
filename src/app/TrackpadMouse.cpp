@@ -5,6 +5,16 @@
 
 static constexpr uint8_t BTN_TP_RT_CLICK = 0x40;  // buf[4] bit 6 — right pad hard press
 
+// Press/release a single virtual key.
+static void SendVk(WORD vk, bool down) {
+    if (!vk) return;
+    INPUT in{};
+    in.type       = INPUT_KEYBOARD;
+    in.ki.wVk     = vk;
+    in.ki.dwFlags = down ? 0 : KEYEVENTF_KEYUP;
+    SendInput(1, &in, sizeof(INPUT));
+}
+
 // Read one trackpad's touch / click / position from a state report.
 TrackpadMouse::Pad TrackpadMouse::ReadPad(const uint8_t* buf, bool left) {
     Pad p{};
@@ -139,30 +149,15 @@ void TrackpadMouse::DoScroll(PadState& ps, const Pad& pad) {
     ps.sTouching = pad.touching;
 }
 
-// --- Directional keys (arrows / WASD) --------------------------------------
+// --- Directional keys (remappable per direction) ---------------------------
 void TrackpadMouse::ApplyDpad(PadState& ps, int want) {
-    const int  dirs[4] = { 1, 2, 4, 8 };                       // up, down, left, right
-    const WORD vkArrow[4] = { VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT };
-    const WORD vkWasd [4] = { 'W',   'S',     'A',     'D'     };
+    const int dirs[4] = { 1, 2, 4, 8 };   // up, down, left, right
     for (int i = 0; i < 4; ++i) {
         const bool now = (want & dirs[i]) != 0;
         const bool was = (ps.dpadHeld & dirs[i]) != 0;
-        if (now == was) continue;
-        INPUT in{};
-        in.type     = INPUT_KEYBOARD;
-        in.ki.wVk   = m_dpadWASD ? vkWasd[i] : vkArrow[i];
-        in.ki.dwFlags = now ? 0 : KEYEVENTF_KEYUP;
-        SendInput(1, &in, sizeof(INPUT));
+        if (now != was) SendVk(static_cast<WORD>(m_dpadCardKey[i]), now);
     }
     ps.dpadHeld = want;
-}
-
-static void SendVk(WORD vk, bool down) {
-    INPUT in{};
-    in.type       = INPUT_KEYBOARD;
-    in.ki.wVk     = vk;
-    in.ki.dwFlags = down ? 0 : KEYEVENTF_KEYUP;
-    SendInput(1, &in, sizeof(INPUT));
 }
 
 void TrackpadMouse::ReleaseDpad(PadState& ps) {
@@ -210,12 +205,20 @@ void TrackpadMouse::ReleaseButtons(PadState& ps) {
     ps.btnHeld = 0;
 }
 
-void TrackpadMouse::DoButtons(PadState& ps, const Pad& pad) {
+void TrackpadMouse::DoButtons(PadState& ps, const Pad& pad, int side) {
+    const int touchZone = pad.touching ? (pad.x < -10922 ? 0 : (pad.x > 10922 ? 2 : 1)) : -1;
+
+    // Optional haptic when the finger crosses into a different zone, so you can
+    // feel which third you're on without having to click.
+    if (m_btnZoneHaptic && touchZone != ps.btnZone) {
+        if (touchZone >= 0) fireHaptic(static_cast<uint8_t>(side), 700.0f);
+        ps.btnZone = touchZone;
+    }
+    if (!m_btnZoneHaptic) ps.btnZone = touchZone;
+
     const bool active = m_btnOnClick ? pad.clicking : pad.touching;
     if (active && ps.btnHeld == 0) {
-        // Three vertical thirds: left / middle / right, each remappable.
-        const int zone = pad.x < -10922 ? 0 : (pad.x > 10922 ? 2 : 1);
-        const int btn = m_btn3[zone];
+        const int btn = (touchZone >= 0) ? m_btn3[touchZone] : 0;
         if (btn >= 1 && btn <= 5) {
             SendMouseBtn(btn, true);
             ps.btnHeld = btn;
@@ -241,7 +244,7 @@ void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
             case PadRole::Mouse:   DoMouse(ps, pad);   break;
             case PadRole::Scroll:  DoScroll(ps, pad);  break;
             case PadRole::Dpad:    DoDpad(ps, pad);    break;
-            case PadRole::Buttons: DoButtons(ps, pad); break;
+            case PadRole::Buttons: DoButtons(ps, pad, side); break;
             case PadRole::Stick:   // handled by the virtual controller
             case PadRole::Off:
             default: break;

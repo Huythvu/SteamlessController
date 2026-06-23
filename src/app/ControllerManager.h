@@ -61,15 +61,15 @@ public:
     // Per-pad role. side 0 = right pad, 1 = left pad; role is a PadRole value.
     void SetPadRole(int side, int role);
     int  GetPadRole(int side) const { return static_cast<int>(side == 1 ? m_padRoleLeft : m_padRoleRight); }
-    void SetDpadWASD(bool wasd);
-    bool IsDpadWASD() const { return m_dpadWASD; }
     void SetDpadSingle(bool b);     bool IsDpadSingle() const     { return m_dpadSingle; }
     void SetDpadDiagonal(bool b);   bool IsDpadDiagonal() const   { return m_dpadDiagonal; }
-    // Corner-quadrant keys (VK codes) for diagonal mode; idx 0..3 = TR,TL,BR,BL.
-    void SetDpadQuadKey(int idx, int vk);
-    int  GetDpadQuadKey(int idx) const;
+    // Direction keys (VK codes). Cardinal idx 0..3 = up,down,left,right;
+    // corner idx 0..3 = TR,TL,BR,BL.
+    void SetDpadCardKey(int idx, int vk);  int GetDpadCardKey(int idx) const;
+    void SetDpadQuadKey(int idx, int vk);  int GetDpadQuadKey(int idx) const;
     void SetDpadOnClick(bool b);    bool IsDpadOnClick() const    { return m_dpadOnClick; }
     void SetButtonsOnClick(bool b); bool IsButtonsOnClick() const { return m_btnOnClick; }
+    void SetButtonsZoneHaptic(bool b); bool IsButtonsZoneHaptic() const { return m_btnZoneHaptic; }
     // Mouse button per third (1=L 2=R 3=M 4=Back 5=Fwd, 0=None); idx 0..2.
     void SetButtonZone(int idx, int btn);
     int  GetButtonZone(int idx) const;
@@ -168,12 +168,13 @@ private:
     std::atomic<bool>                  m_gameModeActive{false};
     PadRole                            m_padRoleRight         = PadRole::Mouse;
     PadRole                            m_padRoleLeft          = PadRole::Scroll;
-    bool                               m_dpadWASD             = false;
     bool                               m_dpadSingle           = false;
     bool                               m_dpadDiagonal         = false;
+    int                                m_dpadCardKey[4]       = { 0x26, 0x28, 0x25, 0x27 };
     int                                m_dpadQuadKey[4]       = { '1', '2', '3', '4' };
     bool                               m_dpadOnClick          = false;
     bool                               m_btnOnClick           = false;
+    bool                               m_btnZoneHaptic        = false;
     int                                m_btn3[3]              = { 1, 3, 2 };
     int                                m_padStickDz           = 10;    // 0..90 (%)
     bool                               m_invertScroll         = false;

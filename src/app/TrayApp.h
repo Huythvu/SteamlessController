@@ -44,13 +44,13 @@ private:
         bool  click      = false;
         float nx = 0.0f, ny = 0.0f;
         float velFrac    = 0.0f;
-        bool  dpadWASD     = false;
         bool  dpadSingle   = false;
         bool  dpadDiagonal = false;
         bool  actOnClick   = false;   // role activates on hard press instead of touch
         bool  clickActive  = true;    // does the hard-click do anything for this role?
         int   btn3[3]      = { 1, 3, 2 };   // mouse button per third (0=None 1=L 2=R 3=M 4=Back 5=Fwd)
-        int   quadKey[4]   = { '1', '2', '3', '4' };   // D-pad corner keys TR,TL,BR,BL
+        int   cardKey[4]   = { 0x26, 0x28, 0x25, 0x27 };   // D-pad up,down,left,right
+        int   quadKey[4]   = { '1', '2', '3', '4' };       // D-pad corner keys TR,TL,BR,BL
         float stickDz      = 0.10f;
     };
     void DrawTrackpadView(const char* label, const PadView& v);
@@ -107,7 +107,7 @@ private:
     int                                m_kbPrevSel[2] = { -1, -1 };            // hover haptic edge
     bool                               m_kbPrevShortcut[3] = { false, false, false };  // back/space/enter edges
     int                                m_kbRecordTarget = -1;                  // 0=open 1=mod 2=clickL 3=clickR 4=back 5=space 6=enter
-    int                                m_dpadQuadRec    = -1;                  // D-pad corner-key recorder (0..3 = TR,TL,BR,BL)
+    int                                m_dpadKeyRec     = -1;                  // D-pad key recorder (0..3; cardinal or corner per mode)
 
     // UI scratch state
     int                                m_currentTab = 0;

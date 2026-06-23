@@ -85,12 +85,13 @@ void ControllerManager::EnableGameMode() {
         m_trackpad.Reset();
         m_trackpad.SetRole(0, m_padRoleRight);
         m_trackpad.SetRole(1, m_padRoleLeft);
-        m_trackpad.SetDpadWASD(m_dpadWASD);
         m_trackpad.SetDpadSingle(m_dpadSingle);
         m_trackpad.SetDpadDiagonal(m_dpadDiagonal);
         m_trackpad.SetDpadOnClick(m_dpadOnClick);
+        for (int i = 0; i < 4; ++i) m_trackpad.SetDpadCardKey(i, m_dpadCardKey[i]);
         for (int i = 0; i < 4; ++i) m_trackpad.SetDpadQuadKey(i, m_dpadQuadKey[i]);
         m_trackpad.SetButtonsOnClick(m_btnOnClick);
+        m_trackpad.SetButtonsZoneHaptic(m_btnZoneHaptic);
         for (int i = 0; i < 3; ++i) m_trackpad.SetButtonZone3(i, m_btn3[i]);
         m_trackpad.SetSuspended(susp);
         if (m_virtual) {
@@ -135,10 +136,20 @@ void ControllerManager::SetPadRole(int side, int role) {
     ApplyPadRoles();
 }
 
-void ControllerManager::SetDpadWASD(bool wasd) {
-    m_dpadWASD = wasd;
+void ControllerManager::SetDpadCardKey(int idx, int vk) {
+    if (idx >= 0 && idx < 4) m_dpadCardKey[idx] = vk;
     std::lock_guard<std::mutex> lock(m_inputMutex);
-    m_trackpad.SetDpadWASD(wasd);
+    m_trackpad.SetDpadCardKey(idx, vk);
+}
+
+int ControllerManager::GetDpadCardKey(int idx) const {
+    return (idx >= 0 && idx < 4) ? m_dpadCardKey[idx] : 0;
+}
+
+void ControllerManager::SetButtonsZoneHaptic(bool b) {
+    m_btnZoneHaptic = b;
+    std::lock_guard<std::mutex> lock(m_inputMutex);
+    m_trackpad.SetButtonsZoneHaptic(b);
 }
 
 void ControllerManager::SetDpadSingle(bool b) {
@@ -197,12 +208,13 @@ void ControllerManager::ApplyPadRoles() {
     m_trackpad.Reset();
     m_trackpad.SetRole(0, m_padRoleRight);
     m_trackpad.SetRole(1, m_padRoleLeft);
-    m_trackpad.SetDpadWASD(m_dpadWASD);
     m_trackpad.SetDpadSingle(m_dpadSingle);
     m_trackpad.SetDpadDiagonal(m_dpadDiagonal);
     m_trackpad.SetDpadOnClick(m_dpadOnClick);
+    for (int i = 0; i < 4; ++i) m_trackpad.SetDpadCardKey(i, m_dpadCardKey[i]);
     for (int i = 0; i < 4; ++i) m_trackpad.SetDpadQuadKey(i, m_dpadQuadKey[i]);
     m_trackpad.SetButtonsOnClick(m_btnOnClick);
+    m_trackpad.SetButtonsZoneHaptic(m_btnZoneHaptic);
     for (int i = 0; i < 3; ++i) m_trackpad.SetButtonZone3(i, m_btn3[i]);
     if (m_virtual) {
         m_virtual->SetPadStick(
@@ -432,13 +444,14 @@ void ControllerManager::ReadLoop() {
 
         if (!m_keyboardMode.load()) {
             std::lock_guard<std::mutex> lock(m_inputMutex);
-            // Pads that own their click hide it from the mapper so it does not
-            // ALSO fire the default pad-click mapping (e.g. the middle click).
-            // The Buttons role always owns the click (its zones are the buttons);
-            // the D-pad only when it activates on click.
+            // Pads that drive their own thing ignore the default pad-click
+            // mapping so a press doesn't also fire a stray mouse button. Buttons
+            // (zones are the buttons), Directional keys, and Mouse all own the
+            // pad; Scroll / Stick / Off keep the default click.
             auto consumesClick = [&](PadRole role) {
                 return role == PadRole::Buttons
-                    || (role == PadRole::Dpad && m_dpadOnClick);
+                    || role == PadRole::Dpad
+                    || role == PadRole::Mouse;
             };
             const bool maskR = consumesClick(m_padRoleRight);   // source 19 = right pad click
             const bool maskL = consumesClick(m_padRoleLeft);    // source 20 = left pad click
