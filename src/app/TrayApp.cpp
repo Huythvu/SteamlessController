@@ -645,9 +645,11 @@ void TrayApp::DrawTabs() {
         char lbl[64], rbl[64];
         std::snprintf(lbl, sizeof(lbl), "Left pad (%s)",  PadRoleName(static_cast<PadRole>(lRole)));
         std::snprintf(rbl, sizeof(rbl), "Right pad (%s)", PadRoleName(static_cast<PadRole>(rRole)));
-        DrawTrackpadView(lbl, lt, lc, lx / 32767.0f, ly / 32767.0f, fracFor(lRole));
+        const bool  wasd    = c.IsDpadWASD();
+        const float stickDz = c.GetRightDeadzone() / 100.0f;
+        DrawTrackpadView(lbl, lRole, lt, lc, lx / 32767.0f, ly / 32767.0f, fracFor(lRole), wasd, stickDz);
         ImGui::SameLine(0, 24);
-        DrawTrackpadView(rbl, rt, rc, rx / 32767.0f, ry / 32767.0f, fracFor(rRole));
+        DrawTrackpadView(rbl, rRole, rt, rc, rx / 32767.0f, ry / 32767.0f, fracFor(rRole), wasd, stickDz);
         ImGui::EndTabItem();
     }
 
@@ -1189,11 +1191,12 @@ void TrayApp::DrawStickView(float nx, float ny, float dz) {
     ImGui::Dummy(ImVec2(sz, sz));
 }
 
-// A live trackpad view: square pad with the touch dot, touch/click state, and
-// a movement bar with the deadzone marked at the half-way line. When you move
-// fast enough to cross the red marker, the bar goes green = output is sent.
-void TrayApp::DrawTrackpadView(const char* label, bool touch, bool click,
-                               float nx, float ny, float velFrac) {
+// A live, role-aware trackpad view: the square pad with the touch dot, plus an
+// overlay that illustrates what the pad's role actually does (mouse movement
+// bar, scroll axes, D-pad zones, stick deadzone ring, or mouse-button thirds).
+void TrayApp::DrawTrackpadView(const char* label, int role, bool touch, bool click,
+                               float nx, float ny, float velFrac,
+                               bool dpadWASD, float stickDz) {
     ImGui::BeginGroup();
     ImGui::TextUnformatted(label);
 
@@ -1202,36 +1205,93 @@ void TrayApp::DrawTrackpadView(const char* label, bool touch, bool click,
     ImDrawList* dl = ImGui::GetWindowDrawList();
     ImVec2 a = p, b = ImVec2(p.x + sz, p.y + sz);
     ImU32 border = ImGui::GetColorU32(ImGuiCol_Border);
+    ImU32 bg     = ImGui::GetColorU32(ImGuiCol_FrameBg);
+    ImU32 green  = IM_COL32(50, 180, 80, 255);
+    ImU32 greenF = IM_COL32(50, 180, 80, 90);
+    ImU32 blue   = IM_COL32(80, 180, 255, 255);
+    ImVec2 ctr((a.x + b.x) / 2, (a.y + b.y) / 2);
+    const float half = sz / 2 - 6;
+    const float px = nx < -1 ? -1 : (nx > 1 ? 1 : nx);
+    const float py = ny < -1 ? -1 : (ny > 1 ? 1 : ny);   // +py = up
 
-    dl->AddRectFilled(a, b, click ? IM_COL32(45, 110, 60, 255)
-                                   : ImGui::GetColorU32(ImGuiCol_FrameBg), 12.0f);
-    dl->AddRect(a, b, touch ? IM_COL32(80, 180, 255, 255) : border, 12.0f);
-    if (touch) {
-        float px = nx < -1 ? -1 : (nx > 1 ? 1 : nx);
-        float py = ny < -1 ? -1 : (ny > 1 ? 1 : ny);
-        ImVec2 ctr((a.x + b.x) / 2, (a.y + b.y) / 2);
-        float half = sz / 2 - 6;
-        dl->AddCircleFilled(ImVec2(ctr.x + px * half, ctr.y - py * half), 7.0f,
-                            IM_COL32(80, 180, 255, 255));
+    dl->AddRectFilled(a, b, click ? IM_COL32(45, 110, 60, 255) : bg, 12.0f);
+    dl->AddRect(a, b, touch ? blue : border, 12.0f);
+
+    auto label2 = [&](float cx, float cy, const char* s, bool on) {
+        ImVec2 ts = ImGui::CalcTextSize(s);
+        if (on) dl->AddRectFilled(ImVec2(cx - ts.x/2 - 4, cy - ts.y/2 - 2),
+                                  ImVec2(cx + ts.x/2 + 4, cy + ts.y/2 + 2), greenF, 4.0f);
+        dl->AddText(ImVec2(cx - ts.x/2, cy - ts.y/2), on ? green : border, s);
+    };
+
+    const char* footer = "";
+    const auto Role = static_cast<PadRole>(role);
+
+    if (Role == PadRole::Dpad) {
+        // Cross + center deadzone + the four direction labels, lit when held.
+        const float ddz = 8000.0f / 32767.0f;
+        dl->AddLine(ImVec2(a.x, ctr.y), ImVec2(b.x, ctr.y), border);
+        dl->AddLine(ImVec2(ctr.x, a.y), ImVec2(ctr.x, b.y), border);
+        dl->AddCircle(ctr, half * ddz, IM_COL32(210, 80, 80, 200), 32);
+        const bool up = touch && py > ddz, dn = touch && py < -ddz;
+        const bool lf = touch && nx < -ddz, rt = touch && nx > ddz;
+        label2(ctr.x,           ctr.y - half*0.72f, dpadWASD ? "W" : "Up",   up);
+        label2(ctr.x,           ctr.y + half*0.72f, dpadWASD ? "S" : "Dn",   dn);
+        label2(ctr.x - half*0.72f, ctr.y,           dpadWASD ? "A" : "Lt",   lf);
+        label2(ctr.x + half*0.72f, ctr.y,           dpadWASD ? "D" : "Rt",   rt);
+        footer = touch ? "holding direction key(s)" : "directional keys";
+    } else if (Role == PadRole::Stick) {
+        // Deadzone ring + the aim dot (centered when not touching).
+        dl->AddCircle(ctr, half, border, 48);
+        if (stickDz > 0.0f) dl->AddCircle(ctr, half * stickDz, IM_COL32(210, 80, 80, 200), 32);
+        ImVec2 d = touch ? ImVec2(ctr.x + px*half, ctr.y - py*half) : ctr;
+        dl->AddLine(ctr, d, IM_COL32(120,124,132,255), 2.0f);
+        dl->AddCircleFilled(d, 7.0f, blue);
+        footer = "right stick (aim)";
+    } else if (Role == PadRole::Buttons) {
+        // Three vertical zones: L / M / R, the touched one lit.
+        const float t1 = a.x + sz/3.0f, t2 = a.x + 2.0f*sz/3.0f;
+        dl->AddLine(ImVec2(t1, a.y), ImVec2(t1, b.y), border);
+        dl->AddLine(ImVec2(t2, a.y), ImVec2(t2, b.y), border);
+        const int zone = !touch ? 0 : (nx < -1.0f/3 ? 1 : (nx > 1.0f/3 ? 2 : 3));  // 1=L 2=R 3=M
+        if (zone) {
+            float zl = zone==1 ? a.x : zone==3 ? t1 : t2;
+            float zr = zone==1 ? t1  : zone==3 ? t2 : b.x;
+            dl->AddRectFilled(ImVec2(zl, a.y), ImVec2(zr, b.y), greenF);
+        }
+        label2((a.x+t1)/2, ctr.y, "L", zone==1);
+        label2((t1+t2)/2,  ctr.y, "M", zone==3);
+        label2((t2+b.x)/2, ctr.y, "R", zone==2);
+        footer = "mouse button zones";
+    } else {
+        // Mouse / Scroll / Off: just the touch dot.
+        if (touch) dl->AddCircleFilled(ImVec2(ctr.x + px*half, ctr.y - py*half), 7.0f, blue);
+        footer = Role == PadRole::Mouse  ? "mouse movement"
+               : Role == PadRole::Scroll ? "scroll"
+               : "off";
     }
     ImGui::Dummy(ImVec2(sz, sz));
 
     ImGui::TextDisabled("%s   %s", touch ? "TOUCH" : "touch", click ? "CLICK" : "click");
 
-    // movement bar with the deadzone at the half-way mark
-    ImVec2 bp = ImGui::GetCursorScreenPos();
-    const float bw = sz, bh = 14.0f;
-    ImVec2 ba = bp, bb = ImVec2(bp.x + bw, bp.y + bh);
-    float f = velFrac < 0 ? 0 : (velFrac > 1 ? 1 : velFrac);
-    bool active = velFrac >= 0.5f;
-    dl->AddRectFilled(ba, bb, ImGui::GetColorU32(ImGuiCol_FrameBg), 4.0f);
-    dl->AddRectFilled(ba, ImVec2(bp.x + bw * f, bp.y + bh),
-                      active ? IM_COL32(50, 180, 80, 255) : IM_COL32(110, 115, 125, 255), 4.0f);
-    float mid = bp.x + bw * 0.5f;
-    dl->AddLine(ImVec2(mid, bp.y - 1), ImVec2(mid, bp.y + bh + 1), IM_COL32(230, 80, 80, 255), 2.0f);
-    dl->AddRect(ba, bb, border, 4.0f);
-    ImGui::Dummy(ImVec2(bw, bh));
-    ImGui::TextDisabled("movement | deadzone");
+    // Mouse / Scroll get the movement-vs-deadzone bar; other roles get a caption.
+    if (Role == PadRole::Mouse || Role == PadRole::Scroll) {
+        ImVec2 bp = ImGui::GetCursorScreenPos();
+        const float bw = sz, bh = 14.0f;
+        ImVec2 ba = bp, bb = ImVec2(bp.x + bw, bp.y + bh);
+        float f = velFrac < 0 ? 0 : (velFrac > 1 ? 1 : velFrac);
+        bool active = velFrac >= 0.5f;
+        dl->AddRectFilled(ba, bb, bg, 4.0f);
+        dl->AddRectFilled(ba, ImVec2(bp.x + bw * f, bp.y + bh),
+                          active ? green : IM_COL32(110, 115, 125, 255), 4.0f);
+        float mid = bp.x + bw * 0.5f;
+        dl->AddLine(ImVec2(mid, bp.y - 1), ImVec2(mid, bp.y + bh + 1), IM_COL32(230, 80, 80, 255), 2.0f);
+        dl->AddRect(ba, bb, border, 4.0f);
+        ImGui::Dummy(ImVec2(bw, bh));
+        ImGui::TextDisabled("%s | deadzone", footer);
+    } else {
+        ImGui::TextDisabled("%s", footer);
+    }
     ImGui::EndGroup();
 }
 

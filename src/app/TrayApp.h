@@ -38,8 +38,9 @@ private:
     void DrawTabs();
     void DrawControllerTab();
     void DrawStickView(float nx, float ny, float dz);
-    void DrawTrackpadView(const char* label, bool touch, bool click,
-                          float nx, float ny, float velFrac);
+    void DrawTrackpadView(const char* label, int role, bool touch, bool click,
+                          float nx, float ny, float velFrac,
+                          bool dpadWASD, float stickDz);
     void DrawKeyboardPreview(float availW, float availH);   // static layout preview
 
     // --- Tray ---
