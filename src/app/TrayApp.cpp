@@ -520,6 +520,16 @@ void TrayApp::DrawProfilesSidebar() {
         DeleteProfile();
 }
 
+// Mouse-button labels for the trackpad button-zone remap (0 = None .. 5 = Fwd).
+static const char* MouseBtnName(int b) {
+    switch (b) { case 1: return "Left"; case 2: return "Right"; case 3: return "Middle";
+                 case 4: return "Back"; case 5: return "Forward"; default: return "None"; }
+}
+static const char* MouseBtnShort(int b) {
+    switch (b) { case 1: return "L"; case 2: return "R"; case 3: return "M";
+                 case 4: return "B"; case 5: return "F"; default: return "-"; }
+}
+
 void TrayApp::DrawTabs() {
     if (!ImGui::BeginTabBar("tabs")) return;
 
@@ -611,15 +621,35 @@ void TrayApp::DrawTabs() {
         if (hasRole(PadRole::Buttons)) {
             ImGui::Spacing(); ImGui::Separator();
             ImGui::TextDisabled("MOUSE BUTTONS");
-            ImGui::TextWrapped("Left / middle / right third of the pad = "
-                               "left / middle / right click.");
             bool bclick = c.IsButtonsOnClick();
             if (ImGui::Checkbox("Activate on click (instead of touch)##btn", &bclick)) {
                 c.SetButtonsOnClick(bclick); SaveSettings();
             }
-            bool bswap = c.IsButtonsSwap();
-            if (ImGui::Checkbox("Swap left / right click zones", &bswap)) {
-                c.SetButtonsSwap(bswap); SaveSettings();
+            bool diag = c.IsButtonsDiagonal();
+            if (ImGui::Checkbox("Diagonal zones (up/right/down/left) instead of thirds", &diag)) {
+                c.SetButtonsDiagonal(diag); SaveSettings();
+            }
+            // A dropdown to remap one zone to a mouse button.
+            auto zoneCombo = [&](const char* label, bool dgnl, int idx) {
+                int cur = c.GetButtonZone(dgnl, idx);
+                ImGui::SetNextItemWidth(120);
+                if (ImGui::BeginCombo(label, MouseBtnName(cur))) {
+                    for (int btn = 0; btn <= 5; ++btn)
+                        if (ImGui::Selectable(MouseBtnName(btn), cur == btn)) {
+                            c.SetButtonZone(dgnl, idx, btn); SaveSettings();
+                        }
+                    ImGui::EndCombo();
+                }
+            };
+            if (diag) {
+                zoneCombo("Up zone",    true, 0);
+                zoneCombo("Right zone", true, 1);
+                zoneCombo("Down zone",  true, 2);
+                zoneCombo("Left zone",  true, 3);
+            } else {
+                zoneCombo("Left zone",   false, 0);
+                zoneCombo("Middle zone", false, 1);
+                zoneCombo("Right zone",  false, 2);
             }
         }
 
@@ -672,7 +702,10 @@ void TrayApp::DrawTabs() {
             v.role = role; v.touch = t; v.click = clk;
             v.nx = x / 32767.0f; v.ny = y / 32767.0f; v.velFrac = fracFor(role);
             v.dpadWASD = c.IsDpadWASD(); v.dpadSingle = c.IsDpadSingle();
-            v.actOnClick = actOnClick(role); v.btnSwap = c.IsButtonsSwap();
+            v.actOnClick = actOnClick(role);
+            v.btnDiagonal = c.IsButtonsDiagonal();
+            for (int i = 0; i < 3; ++i) v.btn3[i] = c.GetButtonZone(false, i);
+            for (int i = 0; i < 4; ++i) v.btn4[i] = c.GetButtonZone(true,  i);
             v.stickDz = stickDz;
             return v;
         };
@@ -1282,19 +1315,38 @@ void TrayApp::DrawTrackpadView(const char* label, const PadView& v) {
         dl->AddCircleFilled(d, 7.0f, blue);
         footer = "right stick (aim)";
     } else if (Role == PadRole::Buttons) {
-        // Three vertical zones (outer two swappable), the active one lit.
-        const float t1 = a.x + sz/3.0f, t2 = a.x + 2.0f*sz/3.0f;
-        dl->AddLine(ImVec2(t1, a.y), ImVec2(t1, b.y), border);
-        dl->AddLine(ImVec2(t2, a.y), ImVec2(t2, b.y), border);
-        const int zone = !acting ? 0 : (v.nx < -1.0f/3 ? 1 : (v.nx > 1.0f/3 ? 2 : 3));  // 1=L 2=R 3=M
-        if (zone) {
-            float zl = zone==1 ? a.x : zone==3 ? t1 : t2;
-            float zr = zone==1 ? t1  : zone==3 ? t2 : b.x;
-            dl->AddRectFilled(ImVec2(zl, a.y), ImVec2(zr, b.y), greenF);
+        const float aax = px < 0 ? -px : px, aay = py < 0 ? -py : py;
+        if (v.btnDiagonal) {
+            // Four diagonal (X) zones: up / right / down / left triangles.
+            dl->AddLine(a, b, border);
+            dl->AddLine(ImVec2(a.x, b.y), ImVec2(b.x, a.y), border);
+            const int zone = !acting ? -1 : (aay >= aax ? (py > 0 ? 0 : 2) : (px > 0 ? 1 : 3));
+            const ImVec2 corners[4][2] = {
+                { ImVec2(a.x, a.y), ImVec2(b.x, a.y) },   // up
+                { ImVec2(b.x, a.y), ImVec2(b.x, b.y) },   // right
+                { ImVec2(a.x, b.y), ImVec2(b.x, b.y) },   // down
+                { ImVec2(a.x, a.y), ImVec2(a.x, b.y) },   // left
+            };
+            if (zone >= 0) dl->AddTriangleFilled(corners[zone][0], corners[zone][1], ctr, greenF);
+            label2(ctr.x,              a.y + sz*0.20f, MouseBtnShort(v.btn4[0]), zone==0);
+            label2(b.x - sz*0.20f,     ctr.y,          MouseBtnShort(v.btn4[1]), zone==1);
+            label2(ctr.x,              b.y - sz*0.20f, MouseBtnShort(v.btn4[2]), zone==2);
+            label2(a.x + sz*0.20f,     ctr.y,          MouseBtnShort(v.btn4[3]), zone==3);
+        } else {
+            // Three vertical thirds: left / middle / right.
+            const float t1 = a.x + sz/3.0f, t2 = a.x + 2.0f*sz/3.0f;
+            dl->AddLine(ImVec2(t1, a.y), ImVec2(t1, b.y), border);
+            dl->AddLine(ImVec2(t2, a.y), ImVec2(t2, b.y), border);
+            const int zone = !acting ? -1 : (v.nx < -1.0f/3 ? 0 : (v.nx > 1.0f/3 ? 2 : 1));
+            if (zone >= 0) {
+                float zl = zone==0 ? a.x : zone==1 ? t1 : t2;
+                float zr = zone==0 ? t1  : zone==1 ? t2 : b.x;
+                dl->AddRectFilled(ImVec2(zl, a.y), ImVec2(zr, b.y), greenF);
+            }
+            label2((a.x+t1)/2, ctr.y, MouseBtnShort(v.btn3[0]), zone==0);
+            label2((t1+t2)/2,  ctr.y, MouseBtnShort(v.btn3[1]), zone==1);
+            label2((t2+b.x)/2, ctr.y, MouseBtnShort(v.btn3[2]), zone==2);
         }
-        label2((a.x+t1)/2, ctr.y, v.btnSwap ? "R" : "L", zone==1);
-        label2((t1+t2)/2,  ctr.y, "M",                   zone==3);
-        label2((t2+b.x)/2, ctr.y, v.btnSwap ? "L" : "R", zone==2);
         footer = v.actOnClick ? "click a zone" : "touch a zone";
     } else {
         // Mouse / Scroll / Off: just the touch dot.
@@ -1611,7 +1663,16 @@ void TrayApp::LoadProfileSettings(HKEY key) {
     m_controller->SetDpadSingle          (rb(L"DpadSingle",      false));
     m_controller->SetDpadOnClick         (rb(L"DpadOnClick",     false));
     m_controller->SetButtonsOnClick      (rb(L"BtnOnClick",      false));
-    m_controller->SetButtonsSwap         (rb(L"BtnSwap",         false));
+    m_controller->SetButtonsDiagonal     (rb(L"BtnDiagonal",     false));
+    {
+        const int def3[3] = { 1, 3, 2 };
+        const int def4[4] = { 1, 2, 3, 4 };
+        wchar_t kn[16];
+        for (int i = 0; i < 3; ++i) { swprintf_s(kn, L"BtnZone3_%d", i);
+            m_controller->SetButtonZone(false, i, static_cast<int>(rd(kn, static_cast<DWORD>(def3[i])))); }
+        for (int i = 0; i < 4; ++i) { swprintf_s(kn, L"BtnZone4_%d", i);
+            m_controller->SetButtonZone(true,  i, static_cast<int>(rd(kn, static_cast<DWORD>(def4[i])))); }
+    }
     m_controller->SetPadStickDeadzone    (static_cast<int>(rd(L"PadStickDz", 10)));
     m_controller->SetInvertScroll        (rb(L"InvertScroll",    false));
     m_controller->SetSmartScroll         (rb(L"SmartScroll",     false));
@@ -1672,7 +1733,14 @@ void TrayApp::SaveProfileSettings(HKEY key) {
     wb(L"DpadSingle",      m_controller->IsDpadSingle());
     wb(L"DpadOnClick",     m_controller->IsDpadOnClick());
     wb(L"BtnOnClick",      m_controller->IsButtonsOnClick());
-    wb(L"BtnSwap",         m_controller->IsButtonsSwap());
+    wb(L"BtnDiagonal",     m_controller->IsButtonsDiagonal());
+    {
+        wchar_t kn[16];
+        for (int i = 0; i < 3; ++i) { swprintf_s(kn, L"BtnZone3_%d", i);
+            wd(kn, static_cast<DWORD>(m_controller->GetButtonZone(false, i))); }
+        for (int i = 0; i < 4; ++i) { swprintf_s(kn, L"BtnZone4_%d", i);
+            wd(kn, static_cast<DWORD>(m_controller->GetButtonZone(true, i))); }
+    }
     wd(L"PadStickDz",      static_cast<DWORD>(m_controller->GetPadStickDeadzone()));
     wb(L"InvertScroll",    m_controller->IsInvertScroll());
     wb(L"SmartScroll",     m_controller->IsSmartScroll());

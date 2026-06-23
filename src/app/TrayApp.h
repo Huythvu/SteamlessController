@@ -47,7 +47,9 @@ private:
         bool  dpadWASD   = false;
         bool  dpadSingle = false;
         bool  actOnClick = false;   // role activates on hard press instead of touch
-        bool  btnSwap    = false;
+        bool  btnDiagonal = false;
+        int   btn3[3]    = { 1, 3, 2 };   // mouse button per zone (0=None 1=L 2=R 3=M 4=Back 5=Fwd)
+        int   btn4[4]    = { 1, 2, 3, 4 };
         float stickDz    = 0.10f;
     };
     void DrawTrackpadView(const char* label, const PadView& v);

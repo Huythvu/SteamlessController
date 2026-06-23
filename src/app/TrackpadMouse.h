@@ -14,7 +14,9 @@ public:
     void SetDpadSingle(bool single)              { m_dpadSingle = single; }   // one direction at a time
     void SetDpadOnClick(bool onClick)            { m_dpadOnClick = onClick; } // require a hard press
     void SetButtonsOnClick(bool onClick)         { m_btnOnClick = onClick; }
-    void SetButtonsSwap(bool swap)               { m_btnSwap = swap; }         // swap L/R click zones
+    void SetButtonsDiagonal(bool d)              { m_btnDiagonal = d; }            // 4 X-zones vs 3 thirds
+    void SetButtonZone3(int i, int btn)          { if (i >= 0 && i < 3) m_btn3[i] = btn; }
+    void SetButtonZone4(int i, int btn)          { if (i >= 0 && i < 4) m_btn4[i] = btn; }
     void SetSuspended(bool s)                    { m_suspended = s; }
 
     void SetInvertScroll(bool enabled)           { m_invertScroll       = enabled; }
@@ -80,7 +82,9 @@ private:
     bool     m_dpadSingle         = false;
     bool     m_dpadOnClick        = false;
     bool     m_btnOnClick         = false;
-    bool     m_btnSwap            = false;
+    bool     m_btnDiagonal        = false;
+    int      m_btn3[3]            = { 1, 3, 2 };      // left/middle/right third -> L, M, R
+    int      m_btn4[4]            = { 1, 2, 3, 4 };   // up/right/down/left      -> L, R, M, X1
     bool     m_suspended          = false;
     bool     m_invertScroll       = false;
     bool     m_smartScroll        = false;

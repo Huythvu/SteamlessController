@@ -180,25 +180,46 @@ void TrackpadMouse::DoDpad(PadState& ps, const Pad& pad) {
 }
 
 // --- Mouse-button touch zones ----------------------------------------------
+// Send a mouse button (1=Left 2=Right 3=Middle 4=Back/X1 5=Forward/X2) down/up.
+static void SendMouseBtn(int btn, bool down) {
+    INPUT in{}; in.type = INPUT_MOUSE;
+    switch (btn) {
+        case 1: in.mi.dwFlags = down ? MOUSEEVENTF_LEFTDOWN   : MOUSEEVENTF_LEFTUP;   break;
+        case 2: in.mi.dwFlags = down ? MOUSEEVENTF_RIGHTDOWN  : MOUSEEVENTF_RIGHTUP;  break;
+        case 3: in.mi.dwFlags = down ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_MIDDLEUP; break;
+        case 4: in.mi.dwFlags = down ? MOUSEEVENTF_XDOWN : MOUSEEVENTF_XUP; in.mi.mouseData = XBUTTON1; break;
+        case 5: in.mi.dwFlags = down ? MOUSEEVENTF_XDOWN : MOUSEEVENTF_XUP; in.mi.mouseData = XBUTTON2; break;
+        default: return;
+    }
+    SendInput(1, &in, sizeof(INPUT));
+}
+
 void TrackpadMouse::ReleaseButtons(PadState& ps) {
     if (ps.btnHeld == 0) return;
-    const DWORD up[4] = { 0, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_MIDDLEUP };
-    INPUT in{}; in.type = INPUT_MOUSE; in.mi.dwFlags = up[ps.btnHeld];
-    SendInput(1, &in, sizeof(INPUT));
+    SendMouseBtn(ps.btnHeld, false);
     ps.btnHeld = 0;
 }
 
 void TrackpadMouse::DoButtons(PadState& ps, const Pad& pad) {
     const bool active = m_btnOnClick ? pad.clicking : pad.touching;
     if (active && ps.btnHeld == 0) {
-        // Three vertical zones; the outer two can be swapped (1=L 2=R 3=M).
-        const int lb = m_btnSwap ? 2 : 1;
-        const int rb = m_btnSwap ? 1 : 2;
-        const int btn = pad.x < -10922 ? lb : (pad.x > 10922 ? rb : 3);
-        const DWORD down[4] = { 0, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_MIDDLEDOWN };
-        INPUT in{}; in.type = INPUT_MOUSE; in.mi.dwFlags = down[btn];
-        SendInput(1, &in, sizeof(INPUT));
-        ps.btnHeld = btn;
+        int btn;
+        if (m_btnDiagonal) {
+            // Four diagonal (X) zones: up / right / down / left triangles.
+            const int ax = pad.x, ay = pad.y;
+            const int aax = ax < 0 ? -ax : ax, aay = ay < 0 ? -ay : ay;
+            const int zone = (aay >= aax) ? (ay > 0 ? 0 : 2)    // up : down
+                                          : (ax > 0 ? 1 : 3);   // right : left
+            btn = m_btn4[zone];
+        } else {
+            // Three vertical thirds: left / middle / right.
+            const int zone = pad.x < -10922 ? 0 : (pad.x > 10922 ? 2 : 1);
+            btn = m_btn3[zone];
+        }
+        if (btn >= 1 && btn <= 5) {
+            SendMouseBtn(btn, true);
+            ps.btnHeld = btn;
+        }
     } else if (!active && ps.btnHeld != 0) {
         ReleaseButtons(ps);
     }

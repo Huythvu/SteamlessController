@@ -89,7 +89,9 @@ void ControllerManager::EnableGameMode() {
         m_trackpad.SetDpadSingle(m_dpadSingle);
         m_trackpad.SetDpadOnClick(m_dpadOnClick);
         m_trackpad.SetButtonsOnClick(m_btnOnClick);
-        m_trackpad.SetButtonsSwap(m_btnSwap);
+        m_trackpad.SetButtonsDiagonal(m_btnDiagonal);
+        for (int i = 0; i < 3; ++i) m_trackpad.SetButtonZone3(i, m_btn3[i]);
+        for (int i = 0; i < 4; ++i) m_trackpad.SetButtonZone4(i, m_btn4[i]);
         m_trackpad.SetSuspended(susp);
         if (m_virtual) {
             m_virtual->SetPadStick(
@@ -157,10 +159,24 @@ void ControllerManager::SetButtonsOnClick(bool b) {
     m_trackpad.SetButtonsOnClick(b);
 }
 
-void ControllerManager::SetButtonsSwap(bool b) {
-    m_btnSwap = b;
+void ControllerManager::SetButtonsDiagonal(bool b) {
+    m_btnDiagonal = b;
     std::lock_guard<std::mutex> lock(m_inputMutex);
-    m_trackpad.SetButtonsSwap(b);
+    m_trackpad.SetButtonsDiagonal(b);
+}
+
+void ControllerManager::SetButtonZone(bool diagonal, int idx, int btn) {
+    if (btn < 0 || btn > 5) btn = 0;
+    if (diagonal) { if (idx >= 0 && idx < 4) m_btn4[idx] = btn; }
+    else          { if (idx >= 0 && idx < 3) m_btn3[idx] = btn; }
+    std::lock_guard<std::mutex> lock(m_inputMutex);
+    if (diagonal) m_trackpad.SetButtonZone4(idx, btn);
+    else          m_trackpad.SetButtonZone3(idx, btn);
+}
+
+int ControllerManager::GetButtonZone(bool diagonal, int idx) const {
+    if (diagonal) return (idx >= 0 && idx < 4) ? m_btn4[idx] : 0;
+    return (idx >= 0 && idx < 3) ? m_btn3[idx] : 0;
 }
 
 void ControllerManager::SetPadStickDeadzone(int pos) {
@@ -178,7 +194,9 @@ void ControllerManager::ApplyPadRoles() {
     m_trackpad.SetDpadSingle(m_dpadSingle);
     m_trackpad.SetDpadOnClick(m_dpadOnClick);
     m_trackpad.SetButtonsOnClick(m_btnOnClick);
-    m_trackpad.SetButtonsSwap(m_btnSwap);
+    m_trackpad.SetButtonsDiagonal(m_btnDiagonal);
+    for (int i = 0; i < 3; ++i) m_trackpad.SetButtonZone3(i, m_btn3[i]);
+    for (int i = 0; i < 4; ++i) m_trackpad.SetButtonZone4(i, m_btn4[i]);
     if (m_virtual) {
         m_virtual->SetPadStick(
             m_padRoleRight == PadRole::Stick ? 0 :
@@ -407,12 +425,13 @@ void ControllerManager::ReadLoop() {
 
         if (!m_keyboardMode.load()) {
             std::lock_guard<std::mutex> lock(m_inputMutex);
-            // If a pad uses its hard-click to drive its role (Buttons or D-pad in
-            // "on click" mode), hide that pad's click from the mapper so it does
-            // not ALSO fire the pad-click mapping (e.g. the default middle click).
+            // Pads that own their click hide it from the mapper so it does not
+            // ALSO fire the default pad-click mapping (e.g. the middle click).
+            // The Buttons role always owns the click (its zones are the buttons);
+            // the D-pad only when it activates on click.
             auto consumesClick = [&](PadRole role) {
-                return (role == PadRole::Buttons && m_btnOnClick)
-                    || (role == PadRole::Dpad    && m_dpadOnClick);
+                return role == PadRole::Buttons
+                    || (role == PadRole::Dpad && m_dpadOnClick);
             };
             const bool maskR = consumesClick(m_padRoleRight);   // source 19 = right pad click
             const bool maskL = consumesClick(m_padRoleLeft);    // source 20 = left pad click
