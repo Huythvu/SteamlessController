@@ -58,9 +58,11 @@ public:
     bool IsAutoEnable() const        { return m_autoEnable; }
     void ApplyAutoEnable();   // enable now if configured + connected + off
 
-    void SetTrackpadMouseEnabled(bool enabled);
-    void SetUseLeftTrackpad(bool enabled);
-    void SetScrollWheelEnabled(bool enabled);
+    // Per-pad role. side 0 = right pad, 1 = left pad; role is a PadRole value.
+    void SetPadRole(int side, int role);
+    int  GetPadRole(int side) const { return static_cast<int>(side == 1 ? m_padRoleLeft : m_padRoleRight); }
+    void SetDpadWASD(bool wasd);
+    bool IsDpadWASD() const { return m_dpadWASD; }
     void SetInvertScroll(bool enabled);
     void SetSmartScroll(bool enabled);
     void SetTrackpadSensitivity(int pos);   // 1..100
@@ -75,9 +77,6 @@ public:
 
     bool IsConnected()             const { return m_connected.load(); }
     bool IsGameModeActive()        const { return m_gameModeActive.load(); }
-    bool IsTrackpadMouseEnabled()  const { return m_trackpadMouseEnabled; }
-    bool IsUseLeftTrackpad()       const { return m_useLeftTrackpad; }
-    bool IsScrollWheelEnabled()    const { return m_scrollWheelEnabled; }
     bool IsInvertScroll()          const { return m_invertScroll; }
     bool IsSmartScroll()           const { return m_smartScroll; }
     int  GetTrackpadSensitivity()  const { return m_trackpadSensitivity; }
@@ -130,6 +129,7 @@ private:
     void TryOpen();
     void Close(bool restoreLizard);
     void ApplyStickConfigToVirtual();
+    void ApplyPadRoles();   // push the pad roles to the trackpad + virtual controller
     void StartReadLoop();
     void StopReadLoop();
     void ReadLoop();
@@ -155,9 +155,9 @@ private:
     int                                m_kbKeyEnter     = -1;   // shortcut: Enter
     std::atomic<bool>                  m_connected{false};
     std::atomic<bool>                  m_gameModeActive{false};
-    bool                               m_trackpadMouseEnabled = false;
-    bool                               m_useLeftTrackpad      = false;
-    bool                               m_scrollWheelEnabled   = false;
+    PadRole                            m_padRoleRight         = PadRole::Mouse;
+    PadRole                            m_padRoleLeft          = PadRole::Scroll;
+    bool                               m_dpadWASD             = false;
     bool                               m_invertScroll         = false;
     bool                               m_smartScroll          = false;
     std::atomic<bool>                  m_trackpadSuspended{false};

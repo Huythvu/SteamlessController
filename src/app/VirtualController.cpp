@@ -105,6 +105,24 @@ VirtualController::~VirtualController() {
 void VirtualController::Update(const uint8_t* buf, size_t n, uint16_t buttonBits) {
     if (!m_valid) return;
     XUSB_REPORT report = Translate(buf, n, buttonBits, m_dzL, m_expL, m_dzR, m_expR);
+
+    // A trackpad in "Gamepad stick" mode overrides the right stick with its
+    // absolute touch position (centered when not touching).
+    if (m_padStick >= 0 && n >= 30) {
+        const bool left = (m_padStick == 1);
+        const bool touch = left ? (buf[5] & SteamController::BTN_TP_LT) != 0
+                                : (buf[4] & SteamController::BTN_TP_RT) != 0;
+        if (touch) {
+            int16_t px, py;
+            memcpy(&px, buf + (left ? 18 : 24), 2);
+            memcpy(&py, buf + (left ? 20 : 26), 2);
+            ApplyStick(px, py, m_dzR, m_expR, report.sThumbRX, report.sThumbRY);
+        } else {
+            report.sThumbRX = 0;
+            report.sThumbRY = 0;
+        }
+    }
+
     vigem_target_x360_update(static_cast<PVIGEM_CLIENT>(m_client),
                              static_cast<PVIGEM_TARGET>(m_target),
                              report);

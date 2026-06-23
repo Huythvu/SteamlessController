@@ -83,9 +83,13 @@ void ControllerManager::EnableGameMode() {
         std::lock_guard<std::mutex> lock(m_inputMutex);
         const bool susp = m_trackpadSuspended.load();
         m_trackpad.Reset();
-        m_trackpad.SetTrackpadEnabled(m_trackpadMouseEnabled && !susp);
-        m_trackpad.SetUseLeftTrackpad(m_useLeftTrackpad);
-        m_trackpad.SetScrollEnabled(m_scrollWheelEnabled && !susp);
+        m_trackpad.SetRole(0, m_padRoleRight);
+        m_trackpad.SetRole(1, m_padRoleLeft);
+        m_trackpad.SetDpadWASD(m_dpadWASD);
+        m_trackpad.SetSuspended(susp);
+        if (m_virtual) m_virtual->SetPadStick(
+            m_padRoleRight == PadRole::Stick ? 0 :
+            m_padRoleLeft  == PadRole::Stick ? 1 : -1);
         m_trackpad.SetInvertScroll(m_invertScroll);
         m_trackpad.SetSmartScroll(m_smartScroll);
         m_trackpad.SetSensitivity(MouseSensFromPos(m_trackpadSensitivity));
@@ -115,25 +119,28 @@ void ControllerManager::DisableGameMode() {
     m_onStateChanged(m_connected.load(), m_gameModeActive.load(), false);
 }
 
-void ControllerManager::SetTrackpadMouseEnabled(bool enabled) {
-    m_trackpadMouseEnabled = enabled;
-    std::lock_guard<std::mutex> lock(m_inputMutex);
-    if (!enabled) m_trackpad.Reset();
-    m_trackpad.SetTrackpadEnabled(enabled && !m_trackpadSuspended.load());
+void ControllerManager::SetPadRole(int side, int role) {
+    if (role < 0 || role >= kPadRoleCount) role = 0;
+    if (side == 0)      m_padRoleRight = static_cast<PadRole>(role);
+    else if (side == 1) m_padRoleLeft  = static_cast<PadRole>(role);
+    ApplyPadRoles();
 }
 
-void ControllerManager::SetUseLeftTrackpad(bool enabled) {
-    m_useLeftTrackpad = enabled;
+void ControllerManager::SetDpadWASD(bool wasd) {
+    m_dpadWASD = wasd;
+    std::lock_guard<std::mutex> lock(m_inputMutex);
+    m_trackpad.SetDpadWASD(wasd);
+}
+
+void ControllerManager::ApplyPadRoles() {
     std::lock_guard<std::mutex> lock(m_inputMutex);
     m_trackpad.Reset();
-    m_trackpad.SetUseLeftTrackpad(enabled);
-}
-
-void ControllerManager::SetScrollWheelEnabled(bool enabled) {
-    m_scrollWheelEnabled = enabled;
-    std::lock_guard<std::mutex> lock(m_inputMutex);
-    if (!enabled) m_trackpad.Reset();
-    m_trackpad.SetScrollEnabled(enabled && !m_trackpadSuspended.load());
+    m_trackpad.SetRole(0, m_padRoleRight);
+    m_trackpad.SetRole(1, m_padRoleLeft);
+    m_trackpad.SetDpadWASD(m_dpadWASD);
+    if (m_virtual) m_virtual->SetPadStick(
+        m_padRoleRight == PadRole::Stick ? 0 :
+        m_padRoleLeft  == PadRole::Stick ? 1 : -1);
 }
 
 void ControllerManager::SetHapticOnClick(bool enabled) {
@@ -185,8 +192,7 @@ void ControllerManager::SuspendTrackpad(bool suspended) {
     m_trackpadSuspended.store(suspended);
     std::lock_guard<std::mutex> lock(m_inputMutex);
     m_trackpad.Reset();
-    m_trackpad.SetTrackpadEnabled(m_trackpadMouseEnabled && !suspended);
-    m_trackpad.SetScrollEnabled(m_scrollWheelEnabled && !suspended);
+    m_trackpad.SetSuspended(suspended);
 }
 
 void ControllerManager::SetInvertScroll(bool enabled) {

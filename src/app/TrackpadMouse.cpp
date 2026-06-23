@@ -25,194 +25,213 @@ TrackpadMouse::Pad TrackpadMouse::ReadPad(const uint8_t* buf, bool left) {
 }
 
 void TrackpadMouse::Reset() {
-    // Mouse-button output (pad clicks / paddles) is now owned by InputMapper;
-    // here we only clear local movement + haptic edge state.
-    m_touching  = false;
-    m_prevClick = false;
-    m_prevX     = 0;
-    m_prevY     = 0;
-    m_accumX    = 0.0f;
-    m_accumY    = 0.0f;
-    m_scrollTouching = false;
-    m_scrollPrevClick = false;
-    m_scrollPrevY    = 0;
-    m_scrollPrevX    = 0;
-    m_scrollAccum    = 0.0f;
-    m_scrollAccumX   = 0.0f;
-    m_scrollMoveAccum = 0.0f;
-    m_moveAccum      = 0.0f;
-    m_hpMt = m_hpSt  = false;
+    for (PadState& ps : m_pad) {
+        ApplyDpad(ps, 0);
+        ReleaseButtons(ps);
+        ps = PadState{};
+    }
     m_lastMouseMove.store(0);
     m_lastScrollMove.store(0);
+}
+
+// --- Mouse cursor movement -------------------------------------------------
+void TrackpadMouse::DoMouse(PadState& ps, const Pad& pad) {
+    if (pad.touching && ps.touching) {
+        const int rawdx = pad.x - ps.prevX;
+        const int rawdy = pad.y - ps.prevY;
+        const int adx   = rawdx < 0 ? -rawdx : rawdx;
+        const int ady   = rawdy < 0 ? -rawdy : rawdy;
+        m_lastMouseMove.store(adx + ady);
+        if (adx + ady > m_mouseDeadzone) {
+            const float fdx =  rawdx * m_sensitivity + ps.accumX;
+            const float fdy = -rawdy * m_sensitivity + ps.accumY;   // up = up
+            const int   idx = static_cast<int>(fdx);
+            const int   idy = static_cast<int>(fdy);
+            ps.accumX = fdx - idx;
+            ps.accumY = fdy - idy;
+            if (idx != 0 || idy != 0) {
+                INPUT input{};
+                input.type       = INPUT_MOUSE;
+                input.mi.dwFlags = MOUSEEVENTF_MOVE;
+                input.mi.dx      = idx;
+                input.mi.dy      = idy;
+                SendInput(1, &input, sizeof(INPUT));
+            }
+        }
+    }
+    if (pad.touching) { ps.prevX = pad.x; ps.prevY = pad.y; }
+    else { ps.accumX = ps.accumY = 0.0f; m_lastMouseMove.store(0); }
+    ps.touching = pad.touching;
+}
+
+// --- Scroll wheel (vertical + horizontal) ----------------------------------
+void TrackpadMouse::DoScroll(PadState& ps, const Pad& pad) {
+    auto sendWheel = [](DWORD flag, int ticks) {
+        INPUT input{};
+        input.type         = INPUT_MOUSE;
+        input.mi.dwFlags   = flag;
+        input.mi.mouseData = static_cast<DWORD>(ticks);
+        SendInput(1, &input, sizeof(INPUT));
+    };
+
+    if (pad.touching && !ps.sTouching) {
+        ps.sStartX = pad.x; ps.sStartY = pad.y;
+        ps.sActive = false;
+        ps.sBufX = ps.sBufY = 0;
+        ps.sAccum = ps.sAccumX = 0.0f;
+    }
+
+    if (pad.touching && ps.sTouching) {
+        const int rawdy = pad.y - ps.sPrevY;
+        const int rawdx = pad.x - ps.sPrevX;
+        const int ady   = rawdy < 0 ? -rawdy : rawdy;
+        const int adx   = rawdx < 0 ? -rawdx : rawdx;
+        m_lastScrollMove.store(ady + adx);
+
+        if (m_smartScroll) {
+            const long long ddx = pad.x - ps.sStartX;
+            const long long ddy = pad.y - ps.sStartY;
+            if (!ps.sActive &&
+                ddx * ddx + ddy * ddy >=
+                    static_cast<long long>(kScrollActivate) * kScrollActivate)
+                ps.sActive = true;
+
+            auto axis = [&](int rawd, int ad, float dirSign, float& accum, DWORD flag) {
+                if (ad <= kScrollNoise) { accum *= 0.6f; return; }
+                const float v = dirSign * static_cast<float>(rawd) * m_scrollSensitivity;
+                if ((v < 0.0f) != (accum < 0.0f) && accum != 0.0f) accum = 0.0f;
+                accum += v;
+                const int ticks = static_cast<int>(accum);
+                accum -= ticks;
+                if (ticks != 0) sendWheel(flag, ticks);
+            };
+            if (ps.sActive) {
+                axis(ps.sBufY, ps.sBufY < 0 ? -ps.sBufY : ps.sBufY,
+                     m_invertScroll ? -1.0f : 1.0f, ps.sAccum,  MOUSEEVENTF_WHEEL);
+                axis(ps.sBufX, ps.sBufX < 0 ? -ps.sBufX : ps.sBufX,
+                     1.0f, ps.sAccumX, MOUSEEVENTF_HWHEEL);
+            }
+            ps.sBufY = rawdy; ps.sBufX = rawdx;
+        } else {
+            if (ady > m_scrollDeadzone) {
+                const float dir    = m_invertScroll ? -1.0f : 1.0f;
+                const float fdelta = dir * rawdy * m_scrollSensitivity + ps.sAccum;
+                const int   ticks  = static_cast<int>(fdelta);
+                ps.sAccum = fdelta - ticks;
+                if (ticks != 0) sendWheel(MOUSEEVENTF_WHEEL, ticks);
+            }
+            if (adx > m_scrollDeadzone) {
+                const float fdelta = rawdx * m_scrollSensitivity + ps.sAccumX;
+                const int   ticks  = static_cast<int>(fdelta);
+                ps.sAccumX = fdelta - ticks;
+                if (ticks != 0) sendWheel(MOUSEEVENTF_HWHEEL, ticks);
+            }
+        }
+    }
+
+    if (pad.touching) { ps.sPrevY = pad.y; ps.sPrevX = pad.x; }
+    else {
+        ps.sAccum = ps.sAccumX = 0.0f;
+        ps.sActive = false;
+        ps.sBufX = ps.sBufY = 0;
+        m_lastScrollMove.store(0);
+    }
+    ps.sTouching = pad.touching;
+}
+
+// --- Directional keys (arrows / WASD) --------------------------------------
+void TrackpadMouse::ApplyDpad(PadState& ps, int want) {
+    const int  dirs[4] = { 1, 2, 4, 8 };                       // up, down, left, right
+    const WORD vkArrow[4] = { VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT };
+    const WORD vkWasd [4] = { 'W',   'S',     'A',     'D'     };
+    for (int i = 0; i < 4; ++i) {
+        const bool now = (want & dirs[i]) != 0;
+        const bool was = (ps.dpadHeld & dirs[i]) != 0;
+        if (now == was) continue;
+        INPUT in{};
+        in.type     = INPUT_KEYBOARD;
+        in.ki.wVk   = m_dpadWASD ? vkWasd[i] : vkArrow[i];
+        in.ki.dwFlags = now ? 0 : KEYEVENTF_KEYUP;
+        SendInput(1, &in, sizeof(INPUT));
+    }
+    ps.dpadHeld = want;
+}
+
+void TrackpadMouse::DoDpad(PadState& ps, const Pad& pad) {
+    int want = 0;
+    if (pad.touching) {
+        const int dz = 8000;                       // center deadzone (~25%)
+        if (pad.y >  dz) want |= 1;                 // up
+        if (pad.y < -dz) want |= 2;                 // down
+        if (pad.x < -dz) want |= 4;                 // left
+        if (pad.x >  dz) want |= 8;                 // right
+    }
+    ApplyDpad(ps, want);
+}
+
+// --- Mouse-button touch zones ----------------------------------------------
+void TrackpadMouse::ReleaseButtons(PadState& ps) {
+    if (ps.btnHeld == 0) return;
+    const DWORD up[4] = { 0, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_MIDDLEUP };
+    INPUT in{}; in.type = INPUT_MOUSE; in.mi.dwFlags = up[ps.btnHeld];
+    SendInput(1, &in, sizeof(INPUT));
+    ps.btnHeld = 0;
+}
+
+void TrackpadMouse::DoButtons(PadState& ps, const Pad& pad) {
+    if (pad.touching && ps.btnHeld == 0) {
+        // Three vertical zones: left = left click, middle = middle, right = right.
+        const int btn = pad.x < -10922 ? 1 : (pad.x > 10922 ? 2 : 3);
+        const DWORD down[4] = { 0, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_MIDDLEDOWN };
+        INPUT in{}; in.type = INPUT_MOUSE; in.mi.dwFlags = down[btn];
+        SendInput(1, &in, sizeof(INPUT));
+        ps.btnHeld = btn;
+    } else if (!pad.touching && ps.btnHeld != 0) {
+        ReleaseButtons(ps);
+    }
 }
 
 void TrackpadMouse::Update(const uint8_t* buf, size_t n) {
     if (n < 30) return;
 
-    // The mouse uses one trackpad; the scroll wheel uses the other one.
-    const bool mouseLeft  = m_useLeftTrackpad;
-    const bool scrollLeft = !m_useLeftTrackpad;
+    for (int side = 0; side < 2; ++side) {
+        PadState&  ps   = m_pad[side];
+        const Pad  pad  = ReadPad(buf, side == 1);   // side 1 = left pad
+        const PadRole role = m_suspended ? PadRole::Off : m_role[side];
 
-    // --- Trackpad mouse movement and click ---
-    if (m_trackpadEnabled) {
-        const Pad pad = ReadPad(buf, mouseLeft);
+        // Release any held output when a pad isn't (or stops) producing it.
+        if (role != PadRole::Dpad)    ReleaseDpad(ps);
+        if (role != PadRole::Buttons) ReleaseButtons(ps);
 
-        if (pad.touching && m_touching) {
-            const int rawdx = pad.x - m_prevX;
-            const int rawdy = pad.y - m_prevY;
-            const int adx   = rawdx < 0 ? -rawdx : rawdx;
-            const int ady   = rawdy < 0 ? -rawdy : rawdy;
-            m_lastMouseMove.store(adx + ady);   // publish for the live view
-            // Deadzone: ignore movement below the threshold (resting jitter).
-            if (adx + ady > m_mouseDeadzone) {
-                // Accumulate fractional movement so slow motion isn't lost to
-                // truncation (a single frame's delta * sensitivity can be < 1px).
-                const float fdx =  rawdx * m_sensitivity + m_accumX;
-                const float fdy = -rawdy * m_sensitivity + m_accumY;  // up = up
-                const int   idx = static_cast<int>(fdx);
-                const int   idy = static_cast<int>(fdy);
-                m_accumX = fdx - idx;
-                m_accumY = fdy - idy;
-                if (idx != 0 || idy != 0) {
-                    INPUT input{};
-                    input.type       = INPUT_MOUSE;
-                    input.mi.dwFlags = MOUSEEVENTF_MOVE;
-                    input.mi.dx      = idx;
-                    input.mi.dy      = idy;
-                    SendInput(1, &input, sizeof(INPUT));
-                }
+        switch (role) {
+            case PadRole::Mouse:   DoMouse(ps, pad);   break;
+            case PadRole::Scroll:  DoScroll(ps, pad);  break;
+            case PadRole::Dpad:    DoDpad(ps, pad);    break;
+            case PadRole::Buttons: DoButtons(ps, pad); break;
+            case PadRole::Stick:   // handled by the virtual controller
+            case PadRole::Off:
+            default: break;
+        }
+
+        // Click haptic (two-way), independent of role.
+        if (pad.clicking != ps.prevClick) {
+            if (m_hapticOnClick) fireClick(static_cast<uint8_t>(side));
+            ps.prevClick = pad.clicking;
+        }
+
+        // Movement-texture haptic, independent of role. Both pads use the same
+        // metric (total 2D travel) and density so they feel identical.
+        if (m_hapticOnMove && pad.touching && ps.hpT) {
+            const int dx = pad.x - ps.hpX < 0 ? ps.hpX - pad.x : pad.x - ps.hpX;
+            const int dy = pad.y - ps.hpY < 0 ? ps.hpY - pad.y : pad.y - ps.hpY;
+            ps.moveAccum += static_cast<float>(dx + dy);
+            if (ps.moveAccum >= m_moveTickDistance) {
+                ps.moveAccum = 0.0f;
+                fireHaptic(static_cast<uint8_t>(side), HAPTIC_MOVE);
             }
         }
-
-        if (pad.touching) { m_prevX = pad.x; m_prevY = pad.y; }
-        else { m_accumX = m_accumY = 0.0f; m_lastMouseMove.store(0); }
-        m_touching = pad.touching;
+        if (pad.touching) { ps.hpX = pad.x; ps.hpY = pad.y; }
+        else                ps.moveAccum = 0.0f;
+        ps.hpT = pad.touching;
     }
-
-    // --- Trackpad scroll wheel (vertical + horizontal) ---
-    if (m_scrollEnabled) {
-        const Pad pad = ReadPad(buf, scrollLeft);
-
-        auto sendWheel = [](DWORD flag, int ticks) {
-            INPUT input{};
-            input.type         = INPUT_MOUSE;
-            input.mi.dwFlags   = flag;
-            input.mi.mouseData = static_cast<DWORD>(ticks);
-            SendInput(1, &input, sizeof(INPUT));
-        };
-
-        if (pad.touching && !m_scrollTouching) {
-            // Touch-down: record the origin and require real travel before
-            // scrolling so a tap (which barely moves) never scrolls.
-            m_scrollStartX = pad.x; m_scrollStartY = pad.y;
-            m_scrollActive = false;
-            m_scrollBufX = m_scrollBufY = 0;
-            m_scrollAccum = m_scrollAccumX = 0.0f;
-        }
-
-        if (pad.touching && m_scrollTouching) {
-            const int rawdy = pad.y - m_scrollPrevY;
-            const int rawdx = pad.x - m_scrollPrevX;
-            const int ady   = rawdy < 0 ? -rawdy : rawdy;
-            const int adx   = rawdx < 0 ? -rawdx : rawdx;
-            m_lastScrollMove.store(ady + adx);   // publish for the live view
-
-            if (m_smartScroll) {
-                // Tap rejection: stay idle until the finger has travelled a
-                // minimum distance from where it touched down.
-                const long long ddx = pad.x - m_scrollStartX;
-                const long long ddy = pad.y - m_scrollStartY;
-                if (!m_scrollActive &&
-                    ddx * ddx + ddy * ddy >=
-                        static_cast<long long>(kScrollActivate) * kScrollActivate)
-                    m_scrollActive = true;
-
-                auto axis = [&](int rawd, int ad, float dirSign, float& accum, DWORD flag) {
-                    if (ad <= kScrollNoise) { accum *= 0.6f; return; }   // noise floor
-                    const float v = dirSign * static_cast<float>(rawd) * m_scrollSensitivity;
-                    if ((v < 0.0f) != (accum < 0.0f) && accum != 0.0f) accum = 0.0f;
-                    accum += v;
-                    const int ticks = static_cast<int>(accum);
-                    accum -= ticks;
-                    if (ticks != 0) sendWheel(flag, ticks);
-                };
-                if (m_scrollActive) {
-                    // Apply the PREVIOUS frame's movement and buffer the current
-                    // one. On release the buffered (last) delta is dropped, which
-                    // kills the backward flick as the thumb rolls off the pad.
-                    axis(m_scrollBufY, m_scrollBufY < 0 ? -m_scrollBufY : m_scrollBufY,
-                         m_invertScroll ? -1.0f : 1.0f, m_scrollAccum,  MOUSEEVENTF_WHEEL);
-                    axis(m_scrollBufX, m_scrollBufX < 0 ? -m_scrollBufX : m_scrollBufX,
-                         1.0f, m_scrollAccumX, MOUSEEVENTF_HWHEEL);
-                }
-                m_scrollBufY = rawdy; m_scrollBufX = rawdx;
-            } else {
-                // Vertical wheel. Per-frame deadzone ignores slow/tiny movement.
-                if (ady > m_scrollDeadzone) {
-                    const float dir    = m_invertScroll ? -1.0f : 1.0f;
-                    const float fdelta = dir * rawdy * m_scrollSensitivity + m_scrollAccum;
-                    const int   ticks  = static_cast<int>(fdelta);
-                    m_scrollAccum = fdelta - ticks;
-                    if (ticks != 0) sendWheel(MOUSEEVENTF_WHEEL, ticks);
-                }
-                // Horizontal wheel. Finger right scrolls right (natural swipe).
-                if (adx > m_scrollDeadzone) {
-                    const float fdelta = rawdx * m_scrollSensitivity + m_scrollAccumX;
-                    const int   ticks  = static_cast<int>(fdelta);
-                    m_scrollAccumX = fdelta - ticks;
-                    if (ticks != 0) sendWheel(MOUSEEVENTF_HWHEEL, ticks);
-                }
-            }
-        }
-
-        if (pad.touching) { m_scrollPrevY = pad.y; m_scrollPrevX = pad.x; }
-        else {
-            m_scrollAccum = m_scrollAccumX = 0.0f;
-            m_scrollActive = false;
-            m_scrollBufX = m_scrollBufY = 0;   // drop the lift-off delta
-            m_lastScrollMove.store(0);
-        }
-        m_scrollTouching = pad.touching;
-    }
-
-    const Pad mp = ReadPad(buf, mouseLeft);
-    const Pad sp = ReadPad(buf, scrollLeft);
-
-    // --- Click haptics ---
-    // Fire whenever a pad is hard-pressed, independent of whether the mouse or
-    // scroll features are enabled (the click itself is a remappable button now,
-    // so it can have a function regardless). Two-way: on press and release.
-    if (mp.clicking != m_prevClick) {
-        if (m_hapticOnClick) fireClick(mousePadSide());
-        m_prevClick = mp.clicking;
-    }
-    if (sp.clicking != m_scrollPrevClick) {
-        if (m_hapticOnClick) fireClick(scrollPadSide());
-        m_scrollPrevClick = sp.clicking;
-    }
-
-    // --- Movement-texture haptics ---
-    // Both pads use the SAME metric (total 2D finger travel) and the same
-    // density, so left and right feel identical. Independent of the mouse /
-    // scroll output toggles, so e.g. the scroll pad still buzzes per movement
-    // even with the scroll wheel turned off.
-    auto moveTexture = [&](const Pad& pad, bool& prevTouch,
-                           int16_t& px, int16_t& py, float& accum, uint8_t side) {
-        if (m_hapticOnMove && pad.touching && prevTouch) {
-            const int dx = pad.x - px < 0 ? px - pad.x : pad.x - px;
-            const int dy = pad.y - py < 0 ? py - pad.y : pad.y - py;
-            accum += static_cast<float>(dx + dy);   // total 2D travel, any direction
-            if (accum >= m_moveTickDistance) {
-                accum = 0.0f;
-                fireHaptic(side, HAPTIC_MOVE);
-            }
-        }
-        if (pad.touching) { px = pad.x; py = pad.y; }
-        else                accum = 0.0f;
-        prevTouch = pad.touching;
-    };
-    // Both pads use the same metric (total 2D travel) and density, so the left
-    // and right feel identical, independent of the mouse/scroll output toggles.
-    moveTexture(mp, m_hpMt, m_hpMx, m_hpMy, m_moveAccum,       mousePadSide());
-    moveTexture(sp, m_hpSt, m_hpSx, m_hpSy, m_scrollMoveAccum, scrollPadSide());
 }

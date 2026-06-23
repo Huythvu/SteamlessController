@@ -538,37 +538,73 @@ void TrayApp::DrawTabs() {
     };
 
     if (ImGui::BeginTabItem("Trackpad")) {
-        ImGui::TextDisabled("MOUSE");
-        toggle("Trackpad as mouse", c.IsTrackpadMouseEnabled(),
-               &ControllerManager::SetTrackpadMouseEnabled);
-        toggle("Use the left trackpad for the mouse", c.IsUseLeftTrackpad(),
-               &ControllerManager::SetUseLeftTrackpad);
-        ImGui::BeginDisabled(!c.IsTrackpadMouseEnabled());
-        slider("Mouse sensitivity", c.GetTrackpadSensitivity(), 1, 100,
-               &ControllerManager::SetTrackpadSensitivity);
-        slider("Mouse deadzone (0 = off)", c.GetMouseDeadzone(), 0, 100,
-               &ControllerManager::SetMouseDeadzone);
-        ImGui::EndDisabled();
+        // Each pad's role. Right pad sits on the right, left pad on the left.
+        auto roleCombo = [&](const char* label, int side) {
+            int cur = c.GetPadRole(side);
+            ImGui::SetNextItemWidth(170);
+            if (ImGui::BeginCombo(label, PadRoleName(static_cast<PadRole>(cur)))) {
+                for (int r = 0; r < kPadRoleCount; ++r)
+                    if (ImGui::Selectable(PadRoleName(static_cast<PadRole>(r)), cur == r)) {
+                        c.SetPadRole(side, r); SaveSettings();
+                    }
+                ImGui::EndCombo();
+            }
+        };
+        ImGui::TextDisabled("PAD ROLES");
+        roleCombo("Right pad", 0);
+        roleCombo("Left pad",  1);
 
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::TextDisabled("SCROLL");
-        toggle("Scroll wheel (other trackpad)", c.IsScrollWheelEnabled(),
-               &ControllerManager::SetScrollWheelEnabled);
-        ImGui::BeginDisabled(!c.IsScrollWheelEnabled());
-        toggle("Invert scroll direction", c.IsInvertScroll(),
-               &ControllerManager::SetInvertScroll);
-        // Smart scroll: accumulate movement so slow strokes still scroll, with
-        // built-in tap rejection + lift-off filtering (its own internal tuning).
-        toggle("Smart scroll (slow strokes, tap rejection)", c.IsSmartScroll(),
-               &ControllerManager::SetSmartScroll);
-        slider("Scroll sensitivity", c.GetScrollSensitivity(), 1, 100,
-               &ControllerManager::SetScrollSensitivity);
-        ImGui::BeginDisabled(c.IsSmartScroll());   // deadzone unused in smart mode
-        slider("Scroll deadzone (0 = off)", c.GetScrollDeadzone(), 0, 100,
-               &ControllerManager::SetScrollDeadzone);
-        ImGui::EndDisabled();
-        ImGui::EndDisabled();
+        const int rRole = c.GetPadRole(0), lRole = c.GetPadRole(1);
+        auto hasRole = [&](PadRole role) {
+            return rRole == static_cast<int>(role) || lRole == static_cast<int>(role);
+        };
+
+        if (hasRole(PadRole::Mouse)) {
+            ImGui::Spacing(); ImGui::Separator();
+            ImGui::TextDisabled("MOUSE");
+            slider("Mouse sensitivity", c.GetTrackpadSensitivity(), 1, 100,
+                   &ControllerManager::SetTrackpadSensitivity);
+            slider("Mouse deadzone (0 = off)", c.GetMouseDeadzone(), 0, 100,
+                   &ControllerManager::SetMouseDeadzone);
+        }
+
+        if (hasRole(PadRole::Scroll)) {
+            ImGui::Spacing(); ImGui::Separator();
+            ImGui::TextDisabled("SCROLL");
+            toggle("Invert scroll direction", c.IsInvertScroll(),
+                   &ControllerManager::SetInvertScroll);
+            // Smart scroll: accumulate movement so slow strokes still scroll, with
+            // built-in tap rejection + lift-off filtering (its own internal tuning).
+            toggle("Smart scroll (slow strokes, tap rejection)", c.IsSmartScroll(),
+                   &ControllerManager::SetSmartScroll);
+            slider("Scroll sensitivity", c.GetScrollSensitivity(), 1, 100,
+                   &ControllerManager::SetScrollSensitivity);
+            ImGui::BeginDisabled(c.IsSmartScroll());   // deadzone unused in smart mode
+            slider("Scroll deadzone (0 = off)", c.GetScrollDeadzone(), 0, 100,
+                   &ControllerManager::SetScrollDeadzone);
+            ImGui::EndDisabled();
+        }
+
+        if (hasRole(PadRole::Dpad)) {
+            ImGui::Spacing(); ImGui::Separator();
+            ImGui::TextDisabled("DIRECTIONAL KEYS");
+            bool wasd = c.IsDpadWASD();
+            if (ImGui::Checkbox("Use WASD instead of arrow keys", &wasd)) {
+                c.SetDpadWASD(wasd); SaveSettings();
+            }
+        }
+        if (hasRole(PadRole::Stick)) {
+            ImGui::Spacing(); ImGui::Separator();
+            ImGui::TextDisabled("GAMEPAD STICK");
+            ImGui::TextWrapped("The pad drives the virtual controller's RIGHT stick "
+                               "(uses the right-stick deadzone/curve on the Sticks tab).");
+        }
+        if (hasRole(PadRole::Buttons)) {
+            ImGui::Spacing(); ImGui::Separator();
+            ImGui::TextDisabled("MOUSE BUTTONS");
+            ImGui::TextWrapped("Touch the left / middle / right third of the pad for a "
+                               "left / middle / right click.");
+        }
 
         // --- live view ---
         ImGui::Spacing();
@@ -576,7 +612,6 @@ void TrayApp::DrawTabs() {
         ImGui::TextDisabled("LIVE VIEW (enable Steamless Mode to see input)");
         uint8_t rep[64];
         size_t n = c.GetLatestReport(rep, sizeof(rep));
-        bool useLeft = c.IsUseLeftTrackpad();
         auto rd16  = [&](int idx) -> int16_t {
             int16_t v = 0; if (n >= static_cast<size_t>(idx) + 2) std::memcpy(&v, rep + idx, 2);
             return v;
@@ -601,13 +636,18 @@ void TrayApp::DrawTabs() {
         float sFrac = sdz > 0 ? m_tpScrollVel / (2.0f * sdz) : (m_tpScrollVel > 0 ? 1.0f : 0.0f);
 
         // Lay the pads out as they physically sit: left pad on the left, right
-        // pad on the right. Labels show each pad's current role.
-        bool leftIsMouse = useLeft;
-        DrawTrackpadView(leftIsMouse ? "Left pad (mouse)" : "Left pad (scroll)",
-                         lt, lc, lx / 32767.0f, ly / 32767.0f, leftIsMouse ? mFrac : sFrac);
+        // pad on the right. Labels show each pad's current role. The deadzone bar
+        // is only meaningful for the mouse/scroll roles.
+        auto fracFor = [&](int role) {
+            return role == static_cast<int>(PadRole::Mouse)  ? mFrac
+                 : role == static_cast<int>(PadRole::Scroll) ? sFrac : 0.0f;
+        };
+        char lbl[64], rbl[64];
+        std::snprintf(lbl, sizeof(lbl), "Left pad (%s)",  PadRoleName(static_cast<PadRole>(lRole)));
+        std::snprintf(rbl, sizeof(rbl), "Right pad (%s)", PadRoleName(static_cast<PadRole>(rRole)));
+        DrawTrackpadView(lbl, lt, lc, lx / 32767.0f, ly / 32767.0f, fracFor(lRole));
         ImGui::SameLine(0, 24);
-        DrawTrackpadView(leftIsMouse ? "Right pad (scroll)" : "Right pad (mouse)",
-                         rt, rc, rx / 32767.0f, ry / 32767.0f, leftIsMouse ? sFrac : mFrac);
+        DrawTrackpadView(rbl, rt, rc, rx / 32767.0f, ry / 32767.0f, fracFor(rRole));
         ImGui::EndTabItem();
     }
 
@@ -1455,11 +1495,28 @@ void TrayApp::LoadProfileSettings(HKEY key) {
         return def;
     };
 
-    m_controller->SetTrackpadMouseEnabled(rb(L"TrackpadMouse",   false));
-    m_controller->SetScrollWheelEnabled  (rb(L"ScrollWheel",     false));
+    // Per-pad roles. If not present yet, migrate from the old mouse/scroll/swap
+    // toggles so existing profiles keep behaving the same.
+    DWORD prR = rd(L"PadRoleRight", 0xFFFFFFFF);
+    DWORD prL = rd(L"PadRoleLeft",  0xFFFFFFFF);
+    if (prR == 0xFFFFFFFF || prL == 0xFFFFFFFF) {
+        const bool tpm     = rb(L"TrackpadMouse",   true);
+        const bool scr     = rb(L"ScrollWheel",     true);
+        const bool useLeft = rb(L"UseLeftTrackpad", false);
+        const int  mousePad  = useLeft ? 1 : 0;   // 0 = right, 1 = left
+        const int  scrollPad = useLeft ? 0 : 1;
+        auto roleFor = [&](int pad) -> DWORD {
+            if (tpm && pad == mousePad)  return static_cast<DWORD>(PadRole::Mouse);
+            if (scr && pad == scrollPad) return static_cast<DWORD>(PadRole::Scroll);
+            return static_cast<DWORD>(PadRole::Off);
+        };
+        prR = roleFor(0); prL = roleFor(1);
+    }
+    m_controller->SetPadRole(0, static_cast<int>(prR));
+    m_controller->SetPadRole(1, static_cast<int>(prL));
+    m_controller->SetDpadWASD            (rb(L"DpadWASD",        false));
     m_controller->SetInvertScroll        (rb(L"InvertScroll",    false));
     m_controller->SetSmartScroll         (rb(L"SmartScroll",     false));
-    m_controller->SetUseLeftTrackpad     (rb(L"UseLeftTrackpad", false));
     m_controller->SetTrackpadSensitivity (static_cast<int>(rd(L"TrackpadSensitivity", 35)));
     m_controller->SetScrollSensitivity   (static_cast<int>(rd(L"ScrollSensitivity",   30)));
     m_controller->SetMouseDeadzone       (static_cast<int>(rd(L"MouseDeadzonePos",     50)));
@@ -1511,11 +1568,11 @@ void TrayApp::SaveProfileSettings(HKEY key) {
         RegSetValueExW(key, name, 0, REG_DWORD, reinterpret_cast<const BYTE*>(&val), sizeof(val));
     };
 
-    wb(L"TrackpadMouse",   m_controller->IsTrackpadMouseEnabled());
-    wb(L"ScrollWheel",     m_controller->IsScrollWheelEnabled());
+    wd(L"PadRoleRight",    static_cast<DWORD>(m_controller->GetPadRole(0)));
+    wd(L"PadRoleLeft",     static_cast<DWORD>(m_controller->GetPadRole(1)));
+    wb(L"DpadWASD",        m_controller->IsDpadWASD());
     wb(L"InvertScroll",    m_controller->IsInvertScroll());
     wb(L"SmartScroll",     m_controller->IsSmartScroll());
-    wb(L"UseLeftTrackpad", m_controller->IsUseLeftTrackpad());
     wb(L"HapticOnClick",   m_controller->IsHapticOnClick());
     wb(L"HapticOnMove",    m_controller->IsHapticOnMove());
     wd(L"TrackpadSensitivity", static_cast<DWORD>(m_controller->GetTrackpadSensitivity()));
