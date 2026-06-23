@@ -731,9 +731,6 @@ void TrayApp::DrawTabs() {
             { "Backspace",     4 }, { "Space",       5 }, { "Enter", 6 },
         };
 
-        // Keep the preview live even when the keyboard overlay is closed.
-        UpdateKeyboardPreviewInput();
-
         const ImVec2 avail = ImGui::GetContentRegionAvail();
         const float  rightW = 230.0f;                  // wide enough for the binding text
         float leftW = avail.x - rightW - ImGui::GetStyle().ItemSpacing.x;
@@ -783,7 +780,7 @@ void TrayApp::DrawTabs() {
         }
 
         ImGui::Spacing(); ImGui::Separator();
-        ImGui::TextDisabled("LIVE PREVIEW");
+        ImGui::TextDisabled("LAYOUT PREVIEW");
         const ImVec2 pv = ImGui::GetContentRegionAvail();
         DrawKeyboardPreview(pv.x, pv.y);   // keyboard-shaped, fits the remaining space
         ImGui::EndChild();
@@ -793,22 +790,34 @@ void TrayApp::DrawTabs() {
         ImGui::BeginChild("kbremap", ImVec2(0, avail.y), true);
         ImGui::TextDisabled("FUNCTION -> BUTTON");
         ImGui::Separator();
+        // Fixed name column = longest label + a 16px gap, so the values align.
+        float kbNameW = 0.0f;
         for (const KbBind& b : kBinds) {
-            const int  cur   = kbGet(b.target);
-            const bool armed = (m_kbRecordTarget == b.target);
-            const char* val  = armed ? "press a button..."
-                             : (cur < 0 ? "None" : nullptr);
-            std::string name = (val == nullptr) ? Narrow(InputMapper::kSources[cur].name)
-                                                : std::string();
-            char row[96];
-            std::snprintf(row, sizeof(row), "%-11s %s##kb%d",
-                          b.name, val ? val : name.c_str(), b.target);
-            if (ImGui::Selectable(row, armed))
-                m_kbRecordTarget = armed ? -1 : b.target;
-            if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-                kbSet(b.target, -1); SaveSettings();
-                if (armed) m_kbRecordTarget = -1;
+            float ww = ImGui::CalcTextSize(b.name).x;
+            if (ww > kbNameW) kbNameW = ww;
+        }
+        if (ImGui::BeginTable("kbmap", 2, ImGuiTableFlags_SizingFixedFit)) {
+            ImGui::TableSetupColumn("f", ImGuiTableColumnFlags_WidthFixed, kbNameW + 16.0f);
+            ImGui::TableSetupColumn("v", ImGuiTableColumnFlags_WidthStretch);
+            for (const KbBind& b : kBinds) {
+                const int  cur   = kbGet(b.target);
+                const bool armed = (m_kbRecordTarget == b.target);
+                ImGui::PushID(b.target);
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                if (ImGui::Selectable(b.name, armed, ImGuiSelectableFlags_SpanAllColumns))
+                    m_kbRecordTarget = armed ? -1 : b.target;
+                if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                    kbSet(b.target, -1); SaveSettings();
+                    if (armed) m_kbRecordTarget = -1;
+                }
+                ImGui::TableSetColumnIndex(1);
+                if (armed)        ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.20f, 1.0f), "press...");
+                else if (cur < 0) ImGui::TextDisabled("None");
+                else              ImGui::TextUnformatted(Narrow(InputMapper::kSources[cur].name).c_str());
+                ImGui::PopID();
             }
+            ImGui::EndTable();
         }
         ImGui::EndChild();
         ImGui::EndTabItem();
@@ -1066,23 +1075,38 @@ void TrayApp::DrawControllerTab() {
     // --- legend: every mapping, clear and clickable ---
     ImGui::SameLine();
     ImGui::BeginChild("legend", ImVec2(0, canvasH + 6), true);
-    ImGui::TextDisabled("BUTTON  ->  MAPPING");
+    ImGui::TextDisabled("BUTTON -> MAPPING");
     ImGui::Separator();
+    // Fixed name column = longest source name + a 16px gap, so mappings align.
+    float legNameW = 0.0f;
     for (int i = 0; i < InputMapper::kSourceCount; ++i) {
-        bool pressed = srcPressed(i);
-        bool rec     = (m_recordIndex == i);
-        char row[96];
-        std::snprintf(row, sizeof(row), "%-13s  %s##leg%d",
-                      Narrow(InputMapper::kSources[i].name).c_str(),
-                      ActionLabel(m_controller->GetButtonAction(i)).c_str(), i);
-        if (pressed) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.35f, 0.85f, 0.45f, 1.0f));
-        if (ImGui::Selectable(row, rec)) m_recordIndex = i;
-        if (pressed) ImGui::PopStyleColor();
-        if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-            m_controller->SetButtonAction(i, InputMapper::kSources[i].def);
-            SaveSettings();
-            if (rec) m_recordIndex = -1;
+        float ww = ImGui::CalcTextSize(Narrow(InputMapper::kSources[i].name).c_str()).x;
+        if (ww > legNameW) legNameW = ww;
+    }
+    if (ImGui::BeginTable("legtbl", 2, ImGuiTableFlags_SizingFixedFit)) {
+        ImGui::TableSetupColumn("b", ImGuiTableColumnFlags_WidthFixed, legNameW + 16.0f);
+        ImGui::TableSetupColumn("m", ImGuiTableColumnFlags_WidthStretch);
+        for (int i = 0; i < InputMapper::kSourceCount; ++i) {
+            const bool pressed = srcPressed(i);
+            const bool rec     = (m_recordIndex == i);
+            ImGui::PushID(i + 1000);
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            if (pressed) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.35f, 0.85f, 0.45f, 1.0f));
+            if (ImGui::Selectable(Narrow(InputMapper::kSources[i].name).c_str(), rec,
+                                  ImGuiSelectableFlags_SpanAllColumns))
+                m_recordIndex = i;
+            if (pressed) ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                m_controller->SetButtonAction(i, InputMapper::kSources[i].def);
+                SaveSettings();
+                if (rec) m_recordIndex = -1;
+            }
+            ImGui::TableSetColumnIndex(1);
+            ImGui::TextUnformatted(ActionLabel(m_controller->GetButtonAction(i)).c_str());
+            ImGui::PopID();
         }
+        ImGui::EndTable();
     }
     ImGui::EndChild();
 }
@@ -1160,9 +1184,9 @@ void TrayApp::DrawTrackpadView(const char* label, bool touch, bool click,
     ImGui::EndGroup();
 }
 
-// A live, scaled view of the on-screen keyboard (same geometry the overlay
-// paints): selected keys, active modifiers, and the floating cursors. Keeps the
-// board's real aspect ratio so the preview is keyboard-shaped.
+// A static, scaled view of the current keyboard layout (the same geometry the
+// overlay paints): keys, labels, and the L-shaped Enter. Keeps the board's real
+// aspect ratio so the preview is keyboard-shaped. Not driven by the trackpads.
 void TrayApp::DrawKeyboardPreview(float availW, float availH) {
     const float aspect = m_keyboard.AspectRatio();   // width / height
     float w = availW;
@@ -1175,26 +1199,21 @@ void TrayApp::DrawKeyboardPreview(float availW, float availH) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     dl->AddRectFilled(o, ImVec2(o.x + w, o.y + h), IM_COL32(24, 25, 28, 255), 6.0f);
 
-    const int selL = m_keyboard.Selected(0), selR = m_keyboard.Selected(1);
+    const ImU32 fill   = IM_COL32(48, 50, 56, 255);
+    const ImU32 border = IM_COL32(80, 84, 92, 255);
     const int nk = m_keyboard.KeyCount();
     for (int i = 0; i < nk; ++i) {
         float l, t, r, b; m_keyboard.KeyRect(i, l, t, r, b);
         ImVec2 a(o.x + l * w + 1, o.y + t * h + 1);
         ImVec2 q(o.x + r * w - 1, o.y + b * h - 1);
-        const bool sl = (i == selL), sr = (i == selR);
-        ImU32 fill = IM_COL32(48, 50, 56, 255);
-        if (sl && sr)                      fill = IM_COL32(150, 110, 230, 255);
-        else if (sl)                       fill = IM_COL32(60, 170, 90, 255);
-        else if (sr)                       fill = IM_COL32(60, 150, 240, 255);
-        else if (m_keyboard.IsModActive(i))fill = IM_COL32(200, 160, 40, 255);
         dl->AddRectFilled(a, q, fill, 3.0f);
-        dl->AddRect(a, q, IM_COL32(80, 84, 92, 255), 3.0f);
+        dl->AddRect(a, q, border, 3.0f);
         float kl, kt, kr, kb;
         if (m_keyboard.KeyStem(i, kl, kt, kr, kb)) {   // L-shaped Enter: draw the base too
             ImVec2 sa(o.x + kl * w + 1, o.y + kt * h + 1);
             ImVec2 sq(o.x + kr * w - 1, o.y + kb * h - 1);
             dl->AddRectFilled(sa, sq, fill, 3.0f);
-            dl->AddRect(sa, sq, IM_COL32(80, 84, 92, 255), 3.0f);
+            dl->AddRect(sa, sq, border, 3.0f);
         }
         const std::string lbl = m_keyboard.KeyLabel(i);
         if (!lbl.empty()) {
@@ -1204,55 +1223,6 @@ void TrayApp::DrawKeyboardPreview(float availW, float availH) {
                                    (a.y + q.y) * 0.5f - ts.y * 0.5f),
                             IM_COL32(235, 237, 240, 255), lbl.c_str());
         }
-    }
-    if (m_controller->IsKbBall()) {
-        const ImU32 bc[2] = { IM_COL32(60, 170, 90, 255), IM_COL32(60, 150, 240, 255) };
-        const float rad = (w < h ? w : h) * 0.03f + 3.0f;
-        for (int s = 0; s < 2; ++s) {
-            ImVec2 c(o.x + m_keyboard.CursorX(s) * w, o.y + m_keyboard.CursorY(s) * h);
-            dl->AddCircleFilled(c, rad, bc[s]);
-            dl->AddCircle(c, rad, IM_COL32(235, 237, 240, 255), 16, 2.0f);
-        }
-    }
-}
-
-// Move the preview's cursors from the live trackpad positions while the
-// keyboard overlay is NOT open. Purely visual: it never types or moves the
-// mouse and does not enter keyboard mode, so normal controls keep working.
-void TrayApp::UpdateKeyboardPreviewInput() {
-    if (m_keyboard.IsVisible()) return;   // PollKeyboard already drives it when open
-    uint8_t rep[64];
-    size_t n = m_controller->GetLatestReport(rep, sizeof(rep));
-    if (n < 30) return;
-
-    m_keyboard.SetSplit(m_controller->IsKbSplit());
-    m_keyboard.SetBallMode(m_controller->IsKbBall());
-    const bool  relative = m_controller->IsKbRelative();
-    const float relMul   = (m_controller->GetKbRelSens() / 50.0f) * 1.4f;
-
-    auto pad = [&](int xi, int yi) {
-        int16_t x, y;
-        std::memcpy(&x, rep + xi, 2);
-        std::memcpy(&y, rep + yi, 2);
-        float nx = (static_cast<float>(x) + 32767.0f) / 65534.0f;
-        float ny = (32767.0f - static_cast<float>(y)) / 65534.0f;
-        return std::pair<float, float>(nx, ny);
-    };
-    const bool touch[2] = { (rep[5] & 0x02) != 0, (rep[4] & 0x20) != 0 };
-    const int  xi[2] = { 18, 24 }, yi[2] = { 20, 26 };
-    for (int s = 0; s < 2; ++s) {
-        if (touch[s]) {
-            auto p = pad(xi[s], yi[s]);
-            if (relative) {
-                if (m_kbWasTouch[s])
-                    m_keyboard.MovePointer(s, (p.first - m_kbPrevNx[s]) * relMul,
-                                              (p.second - m_kbPrevNy[s]) * relMul);
-                m_kbPrevNx[s] = p.first; m_kbPrevNy[s] = p.second;
-            } else {
-                m_keyboard.SetPointerAbs(s, p.first, p.second);
-            }
-        }
-        m_kbWasTouch[s] = touch[s];
     }
 }
 
