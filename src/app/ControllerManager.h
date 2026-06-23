@@ -64,13 +64,12 @@ public:
     void SetDpadWASD(bool wasd);
     bool IsDpadWASD() const { return m_dpadWASD; }
     void SetDpadSingle(bool b);     bool IsDpadSingle() const     { return m_dpadSingle; }
+    void SetDpadDiagonal(bool b);   bool IsDpadDiagonal() const   { return m_dpadDiagonal; }
     void SetDpadOnClick(bool b);    bool IsDpadOnClick() const    { return m_dpadOnClick; }
     void SetButtonsOnClick(bool b); bool IsButtonsOnClick() const { return m_btnOnClick; }
-    void SetButtonsDiagonal(bool b); bool IsButtonsDiagonal() const { return m_btnDiagonal; }
-    // Mouse button per zone (1=L 2=R 3=M 4=Back 5=Fwd, 0=None). Thirds use 3
-    // zones (left/middle/right); diagonal uses 4 (up/right/down/left).
-    void SetButtonZone(bool diagonal, int idx, int btn);
-    int  GetButtonZone(bool diagonal, int idx) const;
+    // Mouse button per third (1=L 2=R 3=M 4=Back 5=Fwd, 0=None); idx 0..2.
+    void SetButtonZone(int idx, int btn);
+    int  GetButtonZone(int idx) const;
     void SetPadStickDeadzone(int pos); int GetPadStickDeadzone() const { return m_padStickDz; }  // 0..90
     void SetInvertScroll(bool enabled);
     void SetSmartScroll(bool enabled);
@@ -168,11 +167,10 @@ private:
     PadRole                            m_padRoleLeft          = PadRole::Scroll;
     bool                               m_dpadWASD             = false;
     bool                               m_dpadSingle           = false;
+    bool                               m_dpadDiagonal         = false;
     bool                               m_dpadOnClick          = false;
     bool                               m_btnOnClick           = false;
-    bool                               m_btnDiagonal          = false;
     int                                m_btn3[3]              = { 1, 3, 2 };
-    int                                m_btn4[4]              = { 1, 2, 3, 4 };
     int                                m_padStickDz           = 10;    // 0..90 (%)
     bool                               m_invertScroll         = false;
     bool                               m_smartScroll          = false;

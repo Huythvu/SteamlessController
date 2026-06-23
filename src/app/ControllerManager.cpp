@@ -87,11 +87,10 @@ void ControllerManager::EnableGameMode() {
         m_trackpad.SetRole(1, m_padRoleLeft);
         m_trackpad.SetDpadWASD(m_dpadWASD);
         m_trackpad.SetDpadSingle(m_dpadSingle);
+        m_trackpad.SetDpadDiagonal(m_dpadDiagonal);
         m_trackpad.SetDpadOnClick(m_dpadOnClick);
         m_trackpad.SetButtonsOnClick(m_btnOnClick);
-        m_trackpad.SetButtonsDiagonal(m_btnDiagonal);
         for (int i = 0; i < 3; ++i) m_trackpad.SetButtonZone3(i, m_btn3[i]);
-        for (int i = 0; i < 4; ++i) m_trackpad.SetButtonZone4(i, m_btn4[i]);
         m_trackpad.SetSuspended(susp);
         if (m_virtual) {
             m_virtual->SetPadStick(
@@ -159,23 +158,20 @@ void ControllerManager::SetButtonsOnClick(bool b) {
     m_trackpad.SetButtonsOnClick(b);
 }
 
-void ControllerManager::SetButtonsDiagonal(bool b) {
-    m_btnDiagonal = b;
+void ControllerManager::SetDpadDiagonal(bool b) {
+    m_dpadDiagonal = b;
     std::lock_guard<std::mutex> lock(m_inputMutex);
-    m_trackpad.SetButtonsDiagonal(b);
+    m_trackpad.SetDpadDiagonal(b);
 }
 
-void ControllerManager::SetButtonZone(bool diagonal, int idx, int btn) {
+void ControllerManager::SetButtonZone(int idx, int btn) {
     if (btn < 0 || btn > 5) btn = 0;
-    if (diagonal) { if (idx >= 0 && idx < 4) m_btn4[idx] = btn; }
-    else          { if (idx >= 0 && idx < 3) m_btn3[idx] = btn; }
+    if (idx >= 0 && idx < 3) m_btn3[idx] = btn;
     std::lock_guard<std::mutex> lock(m_inputMutex);
-    if (diagonal) m_trackpad.SetButtonZone4(idx, btn);
-    else          m_trackpad.SetButtonZone3(idx, btn);
+    m_trackpad.SetButtonZone3(idx, btn);
 }
 
-int ControllerManager::GetButtonZone(bool diagonal, int idx) const {
-    if (diagonal) return (idx >= 0 && idx < 4) ? m_btn4[idx] : 0;
+int ControllerManager::GetButtonZone(int idx) const {
     return (idx >= 0 && idx < 3) ? m_btn3[idx] : 0;
 }
 
@@ -192,11 +188,10 @@ void ControllerManager::ApplyPadRoles() {
     m_trackpad.SetRole(1, m_padRoleLeft);
     m_trackpad.SetDpadWASD(m_dpadWASD);
     m_trackpad.SetDpadSingle(m_dpadSingle);
+    m_trackpad.SetDpadDiagonal(m_dpadDiagonal);
     m_trackpad.SetDpadOnClick(m_dpadOnClick);
     m_trackpad.SetButtonsOnClick(m_btnOnClick);
-    m_trackpad.SetButtonsDiagonal(m_btnDiagonal);
     for (int i = 0; i < 3; ++i) m_trackpad.SetButtonZone3(i, m_btn3[i]);
-    for (int i = 0; i < 4; ++i) m_trackpad.SetButtonZone4(i, m_btn4[i]);
     if (m_virtual) {
         m_virtual->SetPadStick(
             m_padRoleRight == PadRole::Stick ? 0 :

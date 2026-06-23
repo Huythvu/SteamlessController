@@ -158,24 +158,8 @@ void TrackpadMouse::ApplyDpad(PadState& ps, int want) {
 }
 
 void TrackpadMouse::DoDpad(PadState& ps, const Pad& pad) {
-    int want = 0;
     const bool active = pad.touching && (!m_dpadOnClick || pad.clicking);
-    if (active) {
-        const int dz  = 8000;                       // center deadzone (~25%)
-        const int ax  = pad.x, ay = pad.y;
-        const int aax = ax < 0 ? -ax : ax;
-        const int aay = ay < 0 ? -ay : ay;
-        if (m_dpadSingle) {
-            // Only the dominant axis fires (no diagonals).
-            if (aax >= aay) { if (ax < -dz) want |= 4; else if (ax > dz) want |= 8; }
-            else            { if (ay >  dz) want |= 1; else if (ay < -dz) want |= 2; }
-        } else {
-            if (ay >  dz) want |= 1;                 // up
-            if (ay < -dz) want |= 2;                 // down
-            if (ax < -dz) want |= 4;                 // left
-            if (ax >  dz) want |= 8;                 // right
-        }
-    }
+    const int want = active ? DpadBits(pad.x, pad.y, m_dpadSingle, m_dpadDiagonal) : 0;
     ApplyDpad(ps, want);
 }
 
@@ -203,19 +187,9 @@ void TrackpadMouse::ReleaseButtons(PadState& ps) {
 void TrackpadMouse::DoButtons(PadState& ps, const Pad& pad) {
     const bool active = m_btnOnClick ? pad.clicking : pad.touching;
     if (active && ps.btnHeld == 0) {
-        int btn;
-        if (m_btnDiagonal) {
-            // Four diagonal (X) zones: up / right / down / left triangles.
-            const int ax = pad.x, ay = pad.y;
-            const int aax = ax < 0 ? -ax : ax, aay = ay < 0 ? -ay : ay;
-            const int zone = (aay >= aax) ? (ay > 0 ? 0 : 2)    // up : down
-                                          : (ax > 0 ? 1 : 3);   // right : left
-            btn = m_btn4[zone];
-        } else {
-            // Three vertical thirds: left / middle / right.
-            const int zone = pad.x < -10922 ? 0 : (pad.x > 10922 ? 2 : 1);
-            btn = m_btn3[zone];
-        }
+        // Three vertical thirds: left / middle / right, each remappable.
+        const int zone = pad.x < -10922 ? 0 : (pad.x > 10922 ? 2 : 1);
+        const int btn = m_btn3[zone];
         if (btn >= 1 && btn <= 5) {
             SendMouseBtn(btn, true);
             ps.btnHeld = btn;
