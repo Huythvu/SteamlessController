@@ -12,7 +12,8 @@ public:
     PadRole GetRole(int side) const              { return (side >= 0 && side < 2) ? m_role[side] : PadRole::Off; }
     void SetDpadWASD(bool wasd)                  { m_dpadWASD = wasd; }
     void SetDpadSingle(bool single)              { m_dpadSingle = single; }   // one direction at a time
-    void SetDpadDiagonal(bool diagonal)          { m_dpadDiagonal = diagonal; } // dedicated 8-way zones
+    void SetDpadDiagonal(bool diagonal)          { m_dpadDiagonal = diagonal; } // corner-quadrant keys
+    void SetDpadQuadKey(int i, int vk)           { if (i >= 0 && i < 4) m_dpadQuadKey[i] = vk; }
     void SetDpadOnClick(bool onClick)            { m_dpadOnClick = onClick; } // require a hard press
     void SetButtonsOnClick(bool onClick)         { m_btnOnClick = onClick; }
     void SetButtonZone3(int i, int btn)          { if (i >= 0 && i < 3) m_btn3[i] = btn; }
@@ -60,6 +61,7 @@ private:
         float   sMoveAccum = 0.0f;
         // dpad: bitmask of currently-held directions (1=up 2=down 4=left 8=right)
         int     dpadHeld = 0;
+        int     dpadQuadHeld = 0;   // VK held in corner-quadrant mode (0 = none)
         // buttons role: which mouse button is held (0=none 1=L 2=R 3=M)
         int     btnHeld = 0;
         // click haptic + movement-texture haptic
@@ -72,14 +74,15 @@ private:
     void DoScroll (PadState& ps, const Pad& pad);
     void DoDpad   (PadState& ps, const Pad& pad);
     void DoButtons(PadState& ps, const Pad& pad);
-    void ReleaseDpad(PadState& ps)    { ApplyDpad(ps, 0); }
+    void ReleaseDpad(PadState& ps);
     void ReleaseButtons(PadState& ps);
     void ApplyDpad(PadState& ps, int want);
 
     PadRole  m_role[2]            = { PadRole::Mouse, PadRole::Scroll };  // right, left
     bool     m_dpadWASD           = false;
     bool     m_dpadSingle         = false;
-    bool     m_dpadDiagonal       = false;
+    bool     m_dpadDiagonal       = false;   // corner-quadrant remappable keys
+    int      m_dpadQuadKey[4]     = { '1', '2', '3', '4' };   // TR, TL, BR, BL
     bool     m_dpadOnClick        = false;
     bool     m_btnOnClick         = false;
     int      m_btn3[3]            = { 1, 3, 2 };      // left/middle/right third -> L, M, R

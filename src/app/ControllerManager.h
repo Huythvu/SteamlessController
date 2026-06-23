@@ -65,6 +65,9 @@ public:
     bool IsDpadWASD() const { return m_dpadWASD; }
     void SetDpadSingle(bool b);     bool IsDpadSingle() const     { return m_dpadSingle; }
     void SetDpadDiagonal(bool b);   bool IsDpadDiagonal() const   { return m_dpadDiagonal; }
+    // Corner-quadrant keys (VK codes) for diagonal mode; idx 0..3 = TR,TL,BR,BL.
+    void SetDpadQuadKey(int idx, int vk);
+    int  GetDpadQuadKey(int idx) const;
     void SetDpadOnClick(bool b);    bool IsDpadOnClick() const    { return m_dpadOnClick; }
     void SetButtonsOnClick(bool b); bool IsButtonsOnClick() const { return m_btnOnClick; }
     // Mouse button per third (1=L 2=R 3=M 4=Back 5=Fwd, 0=None); idx 0..2.
@@ -168,6 +171,7 @@ private:
     bool                               m_dpadWASD             = false;
     bool                               m_dpadSingle           = false;
     bool                               m_dpadDiagonal         = false;
+    int                                m_dpadQuadKey[4]       = { '1', '2', '3', '4' };
     bool                               m_dpadOnClick          = false;
     bool                               m_btnOnClick           = false;
     int                                m_btn3[3]              = { 1, 3, 2 };

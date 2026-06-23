@@ -157,9 +157,35 @@ void TrackpadMouse::ApplyDpad(PadState& ps, int want) {
     ps.dpadHeld = want;
 }
 
+static void SendVk(WORD vk, bool down) {
+    INPUT in{};
+    in.type       = INPUT_KEYBOARD;
+    in.ki.wVk     = vk;
+    in.ki.dwFlags = down ? 0 : KEYEVENTF_KEYUP;
+    SendInput(1, &in, sizeof(INPUT));
+}
+
+void TrackpadMouse::ReleaseDpad(PadState& ps) {
+    ApplyDpad(ps, 0);
+    if (ps.dpadQuadHeld) { SendVk(static_cast<WORD>(ps.dpadQuadHeld), false); ps.dpadQuadHeld = 0; }
+}
+
 void TrackpadMouse::DoDpad(PadState& ps, const Pad& pad) {
     const bool active = pad.touching && (!m_dpadOnClick || pad.clicking);
-    const int want = active ? DpadBits(pad.x, pad.y, m_dpadSingle, m_dpadDiagonal) : 0;
+    if (m_dpadDiagonal) {
+        // Corner quadrants (TR/TL/BR/BL), each holding a remappable key.
+        const int q  = active ? DpadQuadrant(pad.x, pad.y) : -1;
+        const int vk = (q >= 0) ? m_dpadQuadKey[q] : 0;
+        if (vk != ps.dpadQuadHeld) {
+            if (ps.dpadQuadHeld) SendVk(static_cast<WORD>(ps.dpadQuadHeld), false);
+            if (vk)              SendVk(static_cast<WORD>(vk), true);
+            ps.dpadQuadHeld = vk;
+        }
+        ApplyDpad(ps, 0);   // make sure no cardinal keys are stuck
+        return;
+    }
+    if (ps.dpadQuadHeld) { SendVk(static_cast<WORD>(ps.dpadQuadHeld), false); ps.dpadQuadHeld = 0; }
+    const int want = active ? DpadBits(pad.x, pad.y, m_dpadSingle) : 0;
     ApplyDpad(ps, want);
 }
 

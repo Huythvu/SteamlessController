@@ -89,6 +89,7 @@ void ControllerManager::EnableGameMode() {
         m_trackpad.SetDpadSingle(m_dpadSingle);
         m_trackpad.SetDpadDiagonal(m_dpadDiagonal);
         m_trackpad.SetDpadOnClick(m_dpadOnClick);
+        for (int i = 0; i < 4; ++i) m_trackpad.SetDpadQuadKey(i, m_dpadQuadKey[i]);
         m_trackpad.SetButtonsOnClick(m_btnOnClick);
         for (int i = 0; i < 3; ++i) m_trackpad.SetButtonZone3(i, m_btn3[i]);
         m_trackpad.SetSuspended(susp);
@@ -164,6 +165,16 @@ void ControllerManager::SetDpadDiagonal(bool b) {
     m_trackpad.SetDpadDiagonal(b);
 }
 
+void ControllerManager::SetDpadQuadKey(int idx, int vk) {
+    if (idx >= 0 && idx < 4) m_dpadQuadKey[idx] = vk;
+    std::lock_guard<std::mutex> lock(m_inputMutex);
+    m_trackpad.SetDpadQuadKey(idx, vk);
+}
+
+int ControllerManager::GetDpadQuadKey(int idx) const {
+    return (idx >= 0 && idx < 4) ? m_dpadQuadKey[idx] : 0;
+}
+
 void ControllerManager::SetButtonZone(int idx, int btn) {
     if (btn < 0 || btn > 5) btn = 0;
     if (idx >= 0 && idx < 3) m_btn3[idx] = btn;
@@ -190,6 +201,7 @@ void ControllerManager::ApplyPadRoles() {
     m_trackpad.SetDpadSingle(m_dpadSingle);
     m_trackpad.SetDpadDiagonal(m_dpadDiagonal);
     m_trackpad.SetDpadOnClick(m_dpadOnClick);
+    for (int i = 0; i < 4; ++i) m_trackpad.SetDpadQuadKey(i, m_dpadQuadKey[i]);
     m_trackpad.SetButtonsOnClick(m_btnOnClick);
     for (int i = 0; i < 3; ++i) m_trackpad.SetButtonZone3(i, m_btn3[i]);
     if (m_virtual) {

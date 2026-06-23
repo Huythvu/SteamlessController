@@ -307,6 +307,22 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
     // Remap-by-recording: once a button on the diagram is armed, the next key
     // the user presses becomes its mapping (Esc cancels, Del/Backspace clears).
+    // Recording a key for a D-pad corner zone.
+    if ((msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && m_dpadQuadRec >= 0) {
+        int idx = m_dpadQuadRec;
+        m_dpadQuadRec = -1;
+        if (wp == VK_ESCAPE) {
+            // cancel
+        } else if (wp == VK_DELETE || wp == VK_BACK) {
+            m_controller->SetDpadQuadKey(idx, 0);
+            SaveSettings();
+        } else {
+            m_controller->SetDpadQuadKey(idx, static_cast<int>(wp));
+            SaveSettings();
+        }
+        return 0;
+    }
+
     if ((msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && m_recordIndex >= 0) {
         int idx = m_recordIndex;
         m_recordIndex = -1;
@@ -530,6 +546,22 @@ static const char* MouseBtnShort(int b) {
                  case 4: return "B"; case 5: return "F"; default: return "-"; }
 }
 
+// Short label for a virtual-key code (used by the D-pad corner-key remap).
+static std::string VkLabel(int vk) {
+    if (vk == 0) return "-";
+    if (vk >= 0x21 && vk <= 0x7E) return std::string(1, static_cast<char>(vk));
+    switch (vk) {
+        case VK_SPACE:  return "Spc";  case VK_RETURN: return "Ent";
+        case VK_TAB:    return "Tab";  case VK_ESCAPE: return "Esc";
+        case VK_BACK:   return "Bksp"; case VK_LSHIFT: case VK_RSHIFT: case VK_SHIFT: return "Sh";
+        case VK_LCONTROL: case VK_RCONTROL: case VK_CONTROL: return "Ctl";
+        case VK_UP:     return "Up";   case VK_DOWN:  return "Dn";
+        case VK_LEFT:   return "Lt";   case VK_RIGHT: return "Rt";
+    }
+    char b[16]; std::snprintf(b, sizeof(b), "%d", vk);
+    return b;
+}
+
 void TrayApp::DrawTabs() {
     if (!ImGui::BeginTabBar("tabs")) return;
 
@@ -602,16 +634,38 @@ void TrayApp::DrawTabs() {
             if (ImGui::Checkbox("Use WASD instead of arrow keys", &wasd)) {
                 c.SetDpadWASD(wasd); SaveSettings();
             }
-            bool single = c.IsDpadSingle();
-            if (ImGui::Checkbox("One direction at a time (no diagonals)", &single)) {
-                c.SetDpadSingle(single); SaveSettings();
-            }
-            ImGui::BeginDisabled(single);
             bool diag = c.IsDpadDiagonal();
-            if (ImGui::Checkbox("Diagonal zones (8-way)", &diag)) {
+            if (ImGui::Checkbox("Corner zones (assign a key per corner)", &diag)) {
                 c.SetDpadDiagonal(diag); SaveSettings();
             }
-            ImGui::EndDisabled();
+            if (!diag) {
+                m_dpadQuadRec = -1;
+                bool single = c.IsDpadSingle();
+                if (ImGui::Checkbox("One direction at a time (no diagonals)", &single)) {
+                    c.SetDpadSingle(single); SaveSettings();
+                }
+            } else {
+                // Click a corner, then press the key to assign it.
+                auto quadBtn = [&](const char* lbl, int idx) {
+                    ImGui::PushID(idx + 500);
+                    const bool armed = (m_dpadQuadRec == idx);
+                    std::string txt = armed ? "press a key..." : VkLabel(c.GetDpadQuadKey(idx));
+                    if (armed) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.95f, 0.80f, 0.20f, 1.0f));
+                    if (ImGui::Button(txt.c_str(), ImVec2(110, 0)))
+                        m_dpadQuadRec = armed ? -1 : idx;
+                    if (armed) ImGui::PopStyleColor();
+                    if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                        c.SetDpadQuadKey(idx, 0); SaveSettings();
+                        if (armed) m_dpadQuadRec = -1;
+                    }
+                    ImGui::SameLine(); ImGui::TextUnformatted(lbl);
+                    ImGui::PopID();
+                };
+                quadBtn("Top-left",     1);
+                quadBtn("Top-right",    0);
+                quadBtn("Bottom-left",  3);
+                quadBtn("Bottom-right", 2);
+            }
             bool dclick = c.IsDpadOnClick();
             if (ImGui::Checkbox("Activate on click (instead of touch)##dpad", &dclick)) {
                 c.SetDpadOnClick(dclick); SaveSettings();
@@ -700,6 +754,7 @@ void TrayApp::DrawTabs() {
             v.dpadDiagonal = c.IsDpadDiagonal();
             v.actOnClick = actOnClick(role);
             for (int i = 0; i < 3; ++i) v.btn3[i] = c.GetButtonZone(i);
+            for (int i = 0; i < 4; ++i) v.quadKey[i] = c.GetDpadQuadKey(i);
             v.stickDz = stickDz;
             // The hard-click does something unless it's consumed but unused
             // (Buttons on touch hides its click; everything else shows it).
@@ -1290,24 +1345,29 @@ void TrayApp::DrawTrackpadView(const char* label, const PadView& v) {
     const auto Role = static_cast<PadRole>(v.role);
 
     if (Role == PadRole::Dpad) {
-        // Cross (+ diagonal guides for 8-way) + center deadzone + direction
-        // labels. Uses the same DpadBits logic as the live output.
         const float ddz = 8000.0f / 32767.0f;
         dl->AddLine(ImVec2(a.x, ctr.y), ImVec2(b.x, ctr.y), border);
         dl->AddLine(ImVec2(ctr.x, a.y), ImVec2(ctr.x, b.y), border);
-        if (v.dpadDiagonal) {
-            dl->AddLine(a, b, border);
-            dl->AddLine(ImVec2(a.x, b.y), ImVec2(b.x, a.y), border);
-        }
         dl->AddCircle(ctr, half * ddz, IM_COL32(210, 80, 80, 200), 32);
-        const int bits = acting ? DpadBits(static_cast<int>(v.nx * 32767),
-                                           static_cast<int>(v.ny * 32767),
-                                           v.dpadSingle, v.dpadDiagonal) : 0;
-        label2(ctr.x,              ctr.y - half*0.72f, v.dpadWASD ? "W" : "Up", (bits & 1) != 0);
-        label2(ctr.x,              ctr.y + half*0.72f, v.dpadWASD ? "S" : "Dn", (bits & 2) != 0);
-        label2(ctr.x - half*0.72f, ctr.y,              v.dpadWASD ? "A" : "Lt", (bits & 4) != 0);
-        label2(ctr.x + half*0.72f, ctr.y,              v.dpadWASD ? "D" : "Rt", (bits & 8) != 0);
-        footer = v.actOnClick ? "click + direction" : "touch a direction";
+        if (v.dpadDiagonal) {
+            // Four corner quadrants, each showing its assigned key.
+            const int q = acting ? DpadQuadrant(static_cast<int>(v.nx * 32767),
+                                                static_cast<int>(v.ny * 32767)) : -1;
+            const float off = half * 0.5f;
+            label2(ctr.x + off, ctr.y - off, VkLabel(v.quadKey[0]).c_str(), q == 0);  // TR
+            label2(ctr.x - off, ctr.y - off, VkLabel(v.quadKey[1]).c_str(), q == 1);  // TL
+            label2(ctr.x + off, ctr.y + off, VkLabel(v.quadKey[2]).c_str(), q == 2);  // BR
+            label2(ctr.x - off, ctr.y + off, VkLabel(v.quadKey[3]).c_str(), q == 3);  // BL
+            footer = v.actOnClick ? "click a corner" : "touch a corner";
+        } else {
+            const int bits = acting ? DpadBits(static_cast<int>(v.nx * 32767),
+                                               static_cast<int>(v.ny * 32767), v.dpadSingle) : 0;
+            label2(ctr.x,              ctr.y - half*0.72f, v.dpadWASD ? "W" : "Up", (bits & 1) != 0);
+            label2(ctr.x,              ctr.y + half*0.72f, v.dpadWASD ? "S" : "Dn", (bits & 2) != 0);
+            label2(ctr.x - half*0.72f, ctr.y,              v.dpadWASD ? "A" : "Lt", (bits & 4) != 0);
+            label2(ctr.x + half*0.72f, ctr.y,              v.dpadWASD ? "D" : "Rt", (bits & 8) != 0);
+            footer = v.actOnClick ? "click + direction" : "touch a direction";
+        }
     } else if (Role == PadRole::Stick) {
         // Deadzone ring + the aim dot (centered when not touching).
         dl->AddCircle(ctr, half, border, 48);
@@ -1649,6 +1709,12 @@ void TrayApp::LoadProfileSettings(HKEY key) {
     m_controller->SetDpadWASD            (rb(L"DpadWASD",        false));
     m_controller->SetDpadSingle          (rb(L"DpadSingle",      false));
     m_controller->SetDpadDiagonal        (rb(L"DpadDiagonal",    false));
+    {
+        const int defQ[4] = { '1', '2', '3', '4' };
+        wchar_t kn[16];
+        for (int i = 0; i < 4; ++i) { swprintf_s(kn, L"DpadQuadK_%d", i);
+            m_controller->SetDpadQuadKey(i, static_cast<int>(rd(kn, static_cast<DWORD>(defQ[i])))); }
+    }
     m_controller->SetDpadOnClick         (rb(L"DpadOnClick",     false));
     m_controller->SetButtonsOnClick      (rb(L"BtnOnClick",      false));
     {
@@ -1716,6 +1782,11 @@ void TrayApp::SaveProfileSettings(HKEY key) {
     wb(L"DpadWASD",        m_controller->IsDpadWASD());
     wb(L"DpadSingle",      m_controller->IsDpadSingle());
     wb(L"DpadDiagonal",    m_controller->IsDpadDiagonal());
+    {
+        wchar_t kn[16];
+        for (int i = 0; i < 4; ++i) { swprintf_s(kn, L"DpadQuadK_%d", i);
+            wd(kn, static_cast<DWORD>(m_controller->GetDpadQuadKey(i))); }
+    }
     wb(L"DpadOnClick",     m_controller->IsDpadOnClick());
     wb(L"BtnOnClick",      m_controller->IsButtonsOnClick());
     {
