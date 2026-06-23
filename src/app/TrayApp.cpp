@@ -42,6 +42,18 @@ static std::string Narrow(const std::wstring& w) {
                         s.data(), n, nullptr, nullptr);
     return s;
 }
+// Compact label for a controller source button (initials for multi-word names),
+// for the small keyboard-key accents (e.g. "Right Bumper" -> "RB").
+static std::wstring ShortBtnW(const wchar_t* name) {
+    std::wstring s = name;
+    if (s.size() <= 5) return s;
+    std::wstring out; bool start = true;
+    for (wchar_t ch : s) {
+        if (ch == L' ' || ch == L'-') { start = true; continue; }
+        if (start) { out += (ch >= L'a' && ch <= L'z') ? static_cast<wchar_t>(ch - 32) : ch; start = false; }
+    }
+    return out.empty() ? s : out;
+}
 static std::wstring Widen(const char* s) {
     if (!s || !*s) return {};
     int n = MultiByteToWideChar(CP_UTF8, 0, s, -1, nullptr, 0);
@@ -393,6 +405,15 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             m_keyboard.SetLayout(m_controller->GetKbLayout());
             m_keyboard.SetSplit(m_controller->IsKbSplit());
             m_keyboard.SetBallMode(m_controller->IsKbBall());
+            {
+                auto shortFor = [&](int idx) -> std::wstring {
+                    return (idx >= 0 && idx < InputMapper::kSourceCount)
+                         ? ShortBtnW(InputMapper::kSources[idx].name) : std::wstring();
+                };
+                m_keyboard.SetShortcutLabels(shortFor(m_controller->GetKbKeyBackspace()),
+                                             shortFor(m_controller->GetKbKeySpace()),
+                                             shortFor(m_controller->GetKbKeyEnter()));
+            }
             m_keyboard.Show();
             m_controller->SetKeyboardMode(true);
             m_kbPrevActive[0] = m_kbPrevActive[1] = false;
@@ -543,19 +564,6 @@ static const char* MouseBtnName(int b) {
 static const char* MouseBtnShort(int b) {
     switch (b) { case 1: return "L"; case 2: return "R"; case 3: return "M";
                  case 4: return "B"; case 5: return "F"; default: return "-"; }
-}
-
-// Compact label for a controller source button (initials for multi-word names),
-// for the small keyboard-key accents (e.g. "Right Bumper" -> "RB").
-static std::string ShortBtn(const char* name) {
-    std::string s = name;
-    if (s.size() <= 5) return s;
-    std::string out; bool start = true;
-    for (char ch : s) {
-        if (ch == ' ' || ch == '-') { start = true; continue; }
-        if (start) { out += (ch >= 'a' && ch <= 'z') ? static_cast<char>(ch - 32) : ch; start = false; }
-    }
-    return out.empty() ? s : out;
 }
 
 // Short label for a virtual-key code (used by the D-pad key remap). Named keys
@@ -1499,17 +1507,14 @@ void TrayApp::DrawKeyboardPreview(float availW, float availH) {
         else if (vk == VK_SPACE)  srcIdx = m_controller->GetKbKeySpace();
         else if (vk == VK_BACK)   srcIdx = m_controller->GetKbKeyBackspace();
         if (srcIdx >= 0 && srcIdx < InputMapper::kSourceCount) {
-            std::string bn = ShortBtn(Narrow(InputMapper::kSources[srcIdx].name).c_str());
-            ImVec2 ts = ImGui::CalcTextSize(bn.c_str());
-            float ax0 = a.x, ax1 = q.x, ay0 = a.y;   // badge at the top of the key
+            std::string bn = Narrow(ShortBtnW(InputMapper::kSources[srcIdx].name));
+            ImVec2 ats = ImGui::CalcTextSize(bn.c_str());
+            float rx = q.x, ty = a.y;   // top-right corner of the key
             float el, et, er, eb;
             if (vk == VK_RETURN && m_keyboard.KeyStem(i, el, et, er, eb)) {
-                ax0 = o.x + el * w; ax1 = o.x + er * w; ay0 = o.y + et * h;   // use the wider base
+                rx = o.x + er * w; ty = o.y + et * h;   // the wider base for the L-Enter
             }
-            ImVec2 tp((ax0 + ax1) * 0.5f - ts.x * 0.5f, ay0 + 2.0f);
-            dl->AddRectFilled(ImVec2(tp.x - 3, tp.y - 1), ImVec2(tp.x + ts.x + 3, tp.y + ts.y + 1),
-                              IM_COL32(210, 160, 40, 235), 3.0f);
-            dl->AddText(tp, IM_COL32(20, 20, 22, 255), bn.c_str());
+            dl->AddText(ImVec2(rx - ats.x - 2.0f, ty + 2.0f), IM_COL32(225, 180, 60, 255), bn.c_str());
         }
     }
 }

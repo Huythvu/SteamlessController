@@ -345,6 +345,19 @@ void KeyboardOverlay::Paint(HDC hdc) {
     SetBkMode(mem, TRANSPARENT);
     SetTextColor(mem, RGB(235, 237, 240));
 
+    // Accent (mapped controller button) in the top-right corner of Space /
+    // Backspace / Enter. `area` is the rect to align into (the stem for Enter).
+    auto drawAccent = [&](const Key& k, const RECT& area) {
+        const std::wstring* acc = k.vk == VK_BACK   ? &m_lblBack
+                                : k.vk == VK_SPACE  ? &m_lblSpace
+                                : k.vk == VK_RETURN ? &m_lblEnter : nullptr;
+        if (!acc || acc->empty()) return;
+        RECT ar = area; InflateRect(&ar, -6, -5);
+        SetTextColor(mem, RGB(225, 180, 60));
+        DrawTextW(mem, acc->c_str(), -1, &ar, DT_RIGHT | DT_TOP | DT_SINGLELINE);
+        SetTextColor(mem, RGB(235, 237, 240));
+    };
+
     // In ball mode the keys stay neutral and a floating cursor marks the spot;
     // the hovered key only gets a coloured outline. Otherwise we fill the whole
     // hovered key as before.
@@ -379,6 +392,7 @@ void KeyboardOverlay::Paint(HDC hdc) {
             RECT lr = tb; InflateRect(&lr, -3, -3);
             const std::wstring elbl = DisplayLabel(i);
             DrawTextW(mem, elbl.c_str(), -1, &lr, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            drawAccent(m_keys[i], st);   // accent in the wider base
             continue;
         }
         HBRUSH ob = static_cast<HBRUSH>(SelectObject(mem, b));
@@ -398,6 +412,7 @@ void KeyboardOverlay::Paint(HDC hdc) {
         }
         const std::wstring lbl = DisplayLabel(i);
         DrawTextW(mem, lbl.c_str(), -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        drawAccent(m_keys[i], m_keys[i].rc);
     }
 
     // Floating cursors ("balls"), one per pad, at the continuous pointer spot.

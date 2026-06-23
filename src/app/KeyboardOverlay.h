@@ -37,6 +37,12 @@ public:
     // Inject a single virtual-key press (used by the remappable Space /
     // Backspace / Enter shortcut buttons).
     void SendKey(WORD vk);
+    // Accent labels for the controller button mapped to Backspace / Space /
+    // Enter, drawn in the corner of those keys (empty = none).
+    void SetShortcutLabels(const std::wstring& back, const std::wstring& space, const std::wstring& enter) {
+        m_lblBack = back; m_lblSpace = space; m_lblEnter = enter;
+        if (m_hwnd) InvalidateRect(m_hwnd, nullptr, FALSE);
+    }
     HWND Hwnd() const { return m_hwnd; }
 
     // --- geometry/state for the live preview drawn in the settings tab ---
@@ -83,4 +89,5 @@ private:
     int               m_w       = 900;   // keyboard-shaped (wider than tall)
     int               m_h       = 330;
     std::vector<Key>  m_keys;
+    std::wstring      m_lblBack, m_lblSpace, m_lblEnter;   // mapped-button accents
 };
