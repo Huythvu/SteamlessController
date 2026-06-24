@@ -63,6 +63,17 @@ static std::wstring Widen(const char* s) {
     return w;
 }
 
+// Persist an app-level (not per-profile) DWORD under the main key.
+static void WriteAppDword(const wchar_t* name, DWORD v) {
+    HKEY k;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, REG_KEY, 0, nullptr, REG_OPTION_NON_VOLATILE,
+                        KEY_WRITE, nullptr, &k, nullptr) == ERROR_SUCCESS) {
+        RegSetValueExW(k, name, 0, REG_DWORD,
+                       reinterpret_cast<const BYTE*>(&v), sizeof(v));
+        RegCloseKey(k);
+    }
+}
+
 static bool ProfileExists(const std::wstring& name) {
     HKEY k;
     std::wstring path = std::wstring(REG_PROFILES) + L"\\" + name;
@@ -90,11 +101,12 @@ TrayApp::~TrayApp() {
     g_app = nullptr;
 }
 
-bool TrayApp::Init(HINSTANCE hInstance) {
+bool TrayApp::Init(HINSTANCE hInstance, bool startHidden) {
     m_hInstance = hInstance;
     m_iconOff   = LoadIconW(hInstance, MAKEINTRESOURCEW(IDI_ICON_OFF));
     m_iconOn    = LoadIconW(hInstance, MAKEINTRESOURCEW(IDI_ICON_ON));
     m_wmTaskbar = RegisterWindowMessageW(L"TaskbarCreated");
+    m_wmShowApp = RegisterWindowMessageW(L"SteamlessControllerShowApp");
 
     WNDCLASSEXW wc{};
     wc.cbSize        = sizeof(wc);
@@ -119,6 +131,8 @@ bool TrayApp::Init(HINSTANCE hInstance) {
                     out = static_cast<int>(v);
             };
             rd(L"WinX", wx); rd(L"WinY", wy); rd(L"WinW", ww); rd(L"WinH", wh);
+            rd(L"Theme", m_theme);
+            int cm = 0; rd(L"Compact", cm); m_compact = cm != 0;
             RegCloseKey(k);
         }
         if (ww < 600) ww = 1350;
@@ -130,14 +144,6 @@ bool TrayApp::Init(HINSTANCE hInstance) {
                              nullptr, nullptr, hInstance, nullptr);
     if (!m_hwnd) return false;
 
-    // Dark non-client area (title bar / borders) to match the ImGui theme.
-    // Attribute 20 is the documented value (Win10 2004+); older builds used
-    // 19, so fall back to that if the first call is rejected.
-    BOOL dark = TRUE;
-    if (DwmSetWindowAttribute(m_hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
-                              &dark, sizeof(dark)) != S_OK)
-        DwmSetWindowAttribute(m_hwnd, 19, &dark, sizeof(dark));
-
     if (!CreateDeviceD3D(m_hwnd)) {
         CleanupDeviceD3D();
         return false;
@@ -147,15 +153,7 @@ bool TrayApp::Init(HINSTANCE hInstance) {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr;     // don't litter an imgui.ini
-    ImGui::StyleColorsDark();
-    ImGuiStyle& style = ImGui::GetStyle();
-    style.WindowRounding = 0.0f;
-    style.FrameRounding  = 4.0f;
-    style.GrabRounding   = 4.0f;
-    style.WindowPadding  = ImVec2(12, 12);
-    style.ItemSpacing    = ImVec2(10, 8);
-    style.ScaleAllSizes(1.5f);    // ~50% larger UI
-    io.FontGlobalScale = 1.5f;
+    ApplyStyle();                 // theme (dark/light) + density (compact)
     ImGui_ImplWin32_Init(m_hwnd);
     ImGui_ImplDX11_Init(m_device, m_ctx);
 
@@ -180,7 +178,31 @@ bool TrayApp::Init(HINSTANCE hInstance) {
     m_controller->ApplyAutoEnable();
     AddTrayIcon();
     SetTimer(m_hwnd, BATT_TIMER, 5000, nullptr);
-    return true;   // starts hidden in the tray
+    if (!startHidden) ShowMainWindow();   // a plain launch opens the window
+    return true;
+}
+
+// Rebuild the ImGui style from the current theme (dark/light) and density
+// (compact). Also matches the window title bar to the theme.
+void TrayApp::ApplyStyle() {
+    ImGuiStyle s;                 // fresh defaults, then our tweaks + scale
+    s.WindowRounding = 0.0f;
+    s.FrameRounding  = 4.0f;
+    s.GrabRounding   = 4.0f;
+    s.WindowPadding  = m_compact ? ImVec2(7, 6)  : ImVec2(12, 12);
+    s.ItemSpacing    = m_compact ? ImVec2(6, 4)  : ImVec2(10, 8);
+    const float scale = m_compact ? 1.15f : 1.5f;
+    s.ScaleAllSizes(scale);
+    if (m_theme == 1) ImGui::StyleColorsLight(&s); else ImGui::StyleColorsDark(&s);
+    ImGui::GetStyle() = s;
+    ImGui::GetIO().FontGlobalScale = scale;
+
+    if (m_hwnd) {   // match the non-client area (title bar) to the theme
+        BOOL dark = (m_theme == 1) ? FALSE : TRUE;
+        if (DwmSetWindowAttribute(m_hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
+                                  &dark, sizeof(dark)) != S_OK)
+            DwmSetWindowAttribute(m_hwnd, 19, &dark, sizeof(dark));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -351,6 +373,7 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
 
     if (msg == m_wmTaskbar) { AddTrayIcon(); return 0; }
+    if (msg == m_wmShowApp) { ShowMainWindow(); return 0; }   // a 2nd launch asked to open
 
     switch (msg) {
     case WM_SIZE:
@@ -1039,6 +1062,20 @@ void TrayApp::DrawTabs() {
 
         ImGui::Spacing();
         ImGui::Separator();
+        ImGui::TextDisabled("APPEARANCE");
+        const char* themes[] = { "Dark", "Light" };
+        int theme = (m_theme == 1) ? 1 : 0;
+        ImGui::SetNextItemWidth(140);
+        if (ImGui::Combo("Theme", &theme, themes, 2)) {
+            m_theme = theme; WriteAppDword(L"Theme", static_cast<DWORD>(m_theme)); ApplyStyle();
+        }
+        bool compact = m_compact;
+        if (ImGui::Checkbox("Compact layout", &compact)) {
+            m_compact = compact; WriteAppDword(L"Compact", m_compact ? 1 : 0); ApplyStyle();
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
         ImGui::TextDisabled("SteamlessController");
         ImGui::EndTabItem();
     }
@@ -1709,8 +1746,10 @@ void TrayApp::SetStartupEnabled(bool enabled) {
     if (enabled) {
         wchar_t path[MAX_PATH];
         GetModuleFileNameW(nullptr, path, MAX_PATH);
-        wchar_t quoted[MAX_PATH + 2];
-        swprintf_s(quoted, L"\"%s\"", path);
+        wchar_t quoted[MAX_PATH + 16];
+        // --tray so the auto-start launch goes straight to the tray; a manual
+        // launch (no argument) opens the window instead.
+        swprintf_s(quoted, L"\"%s\" --tray", path);
         RegSetValueExW(key, APP_NAME, 0, REG_SZ, reinterpret_cast<const BYTE*>(quoted),
                        static_cast<DWORD>((wcslen(quoted) + 1) * sizeof(wchar_t)));
     } else {

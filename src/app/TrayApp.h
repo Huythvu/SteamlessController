@@ -16,7 +16,7 @@ public:
     TrayApp();
     ~TrayApp();
 
-    bool Init(HINSTANCE hInstance);
+    bool Init(HINSTANCE hInstance, bool startHidden = false);
     int  Run();
 
 private:
@@ -25,6 +25,7 @@ private:
     void CleanupDeviceD3D();
     void CreateRenderTarget();
     void CleanupRenderTarget();
+    void ApplyStyle();   // (re)build the ImGui style from theme + compact
 
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
     LRESULT HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
@@ -91,6 +92,9 @@ private:
     bool                               m_visible   = false;
     bool                               m_done      = false;
     UINT                               m_wmTaskbar = 0;
+    UINT                               m_wmShowApp = 0;   // "show the window" from a 2nd launch
+    int                                m_theme     = 0;   // 0 = dark, 1 = light
+    bool                               m_compact   = false;
     HICON                              m_iconOff   = nullptr;
     HICON                              m_iconOn    = nullptr;
     HDEVNOTIFY                         m_devNotify = nullptr;
