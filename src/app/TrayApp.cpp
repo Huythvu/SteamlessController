@@ -1076,6 +1076,34 @@ void TrayApp::DrawTabs() {
 
         ImGui::Spacing();
         ImGui::Separator();
+        ImGui::TextDisabled("TROUBLESHOOTING");
+        if (!c.IsConnected())
+            ImGui::TextWrapped("Controller not connected. If it stopped working after a "
+                               "Steam or firmware update, run the check below and share it.");
+        if (ImGui::Button("Check controller detection"))
+            m_diagText = c.GetDiagnostics();
+        if (!m_diagText.empty()) {
+            ImGui::SameLine();
+            if (ImGui::Button("Copy")) {
+                if (OpenClipboard(m_hwnd)) {
+                    EmptyClipboard();
+                    size_t bytes = m_diagText.size() + 1;
+                    if (HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE, bytes)) {
+                        if (void* p = GlobalLock(h)) {
+                            std::memcpy(p, m_diagText.c_str(), bytes);
+                            GlobalUnlock(h);
+                            SetClipboardData(CF_TEXT, h);
+                        }
+                    }
+                    CloseClipboard();
+                }
+            }
+            ImGui::InputTextMultiline("##diag", m_diagText.data(), m_diagText.size() + 1,
+                                      ImVec2(-1, 180), ImGuiInputTextFlags_ReadOnly);
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
         ImGui::TextDisabled("SteamlessController");
         ImGui::EndTabItem();
     }

@@ -7,6 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <cstdint>
+#include <string>
 
 class VirtualController;
 
@@ -135,6 +136,9 @@ public:
 
     // True when on USB cable power (wired) rather than the wireless dongle.
     bool IsCharging() const;
+
+    // Troubleshooting dump of the Valve HID interfaces currently present.
+    std::string GetDiagnostics() const;
 
 private:
     void TryOpen();

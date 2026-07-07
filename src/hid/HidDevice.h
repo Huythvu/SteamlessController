@@ -11,6 +11,14 @@ public:
     // Pass usagePage=0 to return all matching interfaces.
     static std::vector<std::wstring> Enumerate(uint16_t vid, uint16_t pid, uint16_t usagePage = 0);
 
+    // Details of a matching HID interface (for diagnostics).
+    struct Info {
+        uint16_t     vid = 0, pid = 0, usagePage = 0, usage = 0;
+        std::wstring path;
+    };
+    // Every HID interface for the given VID (pass vid=0 for all), with details.
+    static std::vector<Info> EnumerateInfo(uint16_t vid);
+
     HidDevice() = default;
     ~HidDevice() { Close(); }
     HidDevice(const HidDevice&) = delete;

@@ -74,6 +74,59 @@ std::vector<std::wstring> HidDevice::Enumerate(uint16_t vid, uint16_t pid, uint1
     return paths;
 }
 
+std::vector<HidDevice::Info> HidDevice::EnumerateInfo(uint16_t vid) {
+    GUID hidGuid;
+    HidD_GetHidGuid(&hidGuid);
+
+    HDEVINFO devInfo = SetupDiGetClassDevsW(&hidGuid, nullptr, nullptr,
+                                            DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
+    if (devInfo == INVALID_HANDLE_VALUE)
+        return {};
+
+    std::vector<Info> out;
+    SP_DEVICE_INTERFACE_DATA ifaceData{};
+    ifaceData.cbSize = sizeof(ifaceData);
+
+    for (DWORD i = 0; SetupDiEnumDeviceInterfaces(devInfo, nullptr, &hidGuid, i, &ifaceData); ++i) {
+        DWORD needed = 0;
+        SetupDiGetDeviceInterfaceDetailW(devInfo, &ifaceData, nullptr, 0, &needed, nullptr);
+        if (needed == 0) continue;
+
+        auto detailBuf = std::make_unique<uint8_t[]>(needed);
+        auto* detail   = reinterpret_cast<SP_DEVICE_INTERFACE_DETAIL_DATA_W*>(detailBuf.get());
+        detail->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_W);
+        if (!SetupDiGetDeviceInterfaceDetailW(devInfo, &ifaceData, detail, needed, nullptr, nullptr))
+            continue;
+
+        HANDLE h = CreateFileW(detail->DevicePath, 0, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                               nullptr, OPEN_EXISTING, 0, nullptr);
+        if (h == INVALID_HANDLE_VALUE) continue;
+
+        HIDD_ATTRIBUTES attrs{};
+        attrs.Size = sizeof(attrs);
+        if (HidD_GetAttributes(h, &attrs) && (vid == 0 || attrs.VendorID == vid)) {
+            Info info;
+            info.vid  = attrs.VendorID;
+            info.pid  = attrs.ProductID;
+            info.path = detail->DevicePath;
+            PHIDP_PREPARSED_DATA preparsed;
+            if (HidD_GetPreparsedData(h, &preparsed)) {
+                HIDP_CAPS caps{};
+                if (HidP_GetCaps(preparsed, &caps) == HIDP_STATUS_SUCCESS) {
+                    info.usagePage = caps.UsagePage;
+                    info.usage     = caps.Usage;
+                }
+                HidD_FreePreparsedData(preparsed);
+            }
+            out.push_back(std::move(info));
+        }
+        CloseHandle(h);
+    }
+
+    SetupDiDestroyDeviceInfoList(devInfo);
+    return out;
+}
+
 // ---------------------------------------------------------------------------
 // Move semantics
 // ---------------------------------------------------------------------------

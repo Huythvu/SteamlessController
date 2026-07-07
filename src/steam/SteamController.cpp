@@ -60,9 +60,72 @@ bool SteamController::Open() {
         }
     }
 
+    // Fallback: a Steam/firmware update may have changed the PID. Try any other
+    // Valve vendor-usage interface that still emits the expected state report,
+    // so a PID bump alone doesn't break detection.
+    for (const auto& d : HidDevice::EnumerateInfo(VALVE_VID)) {
+        if (d.usagePage != VENDOR_USAGE_PAGE) continue;
+        if (d.pid == SC2026_PID || d.pid == SC2026_DONGLE_PID) continue;  // already tried
+        if (!m_device.Open(d.path)) continue;
+        uint8_t buf[64];
+        size_t n = m_device.ReadInputReport(buf, sizeof(buf), /*timeoutMs=*/500);
+        if (n > 0 && buf[0] == REPORT_STATE) {
+            printf("Active interface found for unlisted PID=%04X (firmware update?).\n", d.pid);
+            m_pid = d.pid;
+            return true;
+        }
+        m_device.Close();
+    }
+
     printf("No Steam Controller found (wired PID=%04X or dongle PID=%04X).\n",
            SC2026_PID, SC2026_DONGLE_PID);
     return false;
+}
+
+std::string SteamController::Diagnostics() {
+    std::string s;
+    char line[256];
+    auto devs = HidDevice::EnumerateInfo(VALVE_VID);
+    if (devs.empty()) {
+        s += "No Valve (VID 0x28DE) HID device is present.\n";
+        s += "- Make sure the controller is on and paired / plugged in.\n";
+        s += "- A Steam update can change how the controller enumerates.\n";
+        return s;
+    }
+    std::snprintf(line, sizeof(line), "Found %d Valve HID interface(s):\n",
+                  static_cast<int>(devs.size()));
+    s += line;
+    for (const auto& d : devs) {
+        std::snprintf(line, sizeof(line), "  PID=%04X  UsagePage=%04X  Usage=%02X%s\n",
+                      d.pid, d.usagePage, d.usage,
+                      d.usagePage == VENDOR_USAGE_PAGE ? "   (vendor input)" : "");
+        s += line;
+    }
+    for (const auto& d : devs) {
+        if (d.usagePage != VENDOR_USAGE_PAGE) continue;
+        HidDevice dev;
+        if (!dev.Open(d.path)) {
+            std::snprintf(line, sizeof(line), "  PID=%04X vendor: could not open (in use?)\n", d.pid);
+            s += line; continue;
+        }
+        uint8_t buf[64];
+        size_t n = dev.ReadInputReport(buf, sizeof(buf), /*timeoutMs=*/350);
+        if (n > 0)
+            std::snprintf(line, sizeof(line),
+                          "  PID=%04X vendor: report id=0x%02X, %d bytes (app wants 0x%02X)\n",
+                          d.pid, buf[0], static_cast<int>(n), REPORT_STATE);
+        else
+            std::snprintf(line, sizeof(line),
+                          "  PID=%04X vendor: no report in 350ms (Steam may be holding it)\n", d.pid);
+        s += line;
+        dev.Close();
+    }
+    std::snprintf(line, sizeof(line),
+                  "\nExpected: PID 1302 (wired) or 1304 (dongle), UsagePage FF00, report 0x%02X.\n",
+                  REPORT_STATE);
+    s += line;
+    s += "If the PID / UsagePage / report id above differ, that's what changed.\n";
+    return s;
 }
 
 void SteamController::Close() {

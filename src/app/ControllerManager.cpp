@@ -536,6 +536,10 @@ bool ControllerManager::IsCharging() const {
     return m_connected.load() && g_ctrl && g_ctrl->IsWired();
 }
 
+std::string ControllerManager::GetDiagnostics() const {
+    return SteamController::Diagnostics();
+}
+
 void ControllerManager::SetButtonAction(int sourceIndex, InputMapper::Action a) {
     std::lock_guard<std::mutex> lock(m_inputMutex);
     m_mapper.SetAction(sourceIndex, a);

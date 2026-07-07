@@ -119,6 +119,11 @@ public:
     void Close();
     bool IsOpen() const { return m_device.IsOpen(); }
 
+    // Human-readable dump of the Valve HID interfaces present and the report
+    // they emit, for troubleshooting a controller that won't connect (e.g.
+    // after a Steam/firmware update changed the PID or report id).
+    static std::string Diagnostics();
+
     // True when connected over the wired USB cable (i.e. drawing/charging on
     // USB power), false for the wireless dongle (running on battery).
     bool IsWired() const { return m_pid == SC2026_PID; }

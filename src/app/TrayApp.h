@@ -95,6 +95,7 @@ private:
     UINT                               m_wmShowApp = 0;   // "show the window" from a 2nd launch
     int                                m_theme     = 0;   // 0 = dark, 1 = light
     bool                               m_compact   = false;
+    std::string                        m_diagText;        // controller troubleshooting dump
     HICON                              m_iconOff   = nullptr;
     HICON                              m_iconOn    = nullptr;
     HDEVNOTIFY                         m_devNotify = nullptr;
