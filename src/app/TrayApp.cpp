@@ -63,6 +63,24 @@ static std::wstring Widen(const char* s) {
     return w;
 }
 
+// Write the controller diagnostics to %LOCALAPPDATA%\SteamlessController and
+// return the file path (so the user can open/share it).
+static std::wstring WriteDiagFile(const std::string& text) {
+    wchar_t base[MAX_PATH];
+    DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", base, MAX_PATH);
+    std::wstring dir = (n > 0 && n < MAX_PATH) ? std::wstring(base) + L"\\SteamlessController"
+                                               : std::wstring(L".");
+    CreateDirectoryW(dir.c_str(), nullptr);
+    std::wstring path = dir + L"\\diagnostics.txt";
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
+    if (f != INVALID_HANDLE_VALUE) {
+        DWORD wrote = 0;
+        WriteFile(f, text.data(), static_cast<DWORD>(text.size()), &wrote, nullptr);
+        CloseHandle(f);
+    }
+    return path;
+}
+
 // Persist an app-level (not per-profile) DWORD under the main key.
 static void WriteAppDword(const wchar_t* name, DWORD v) {
     HKEY k;
@@ -1080,9 +1098,19 @@ void TrayApp::DrawTabs() {
         if (!c.IsConnected())
             ImGui::TextWrapped("Controller not connected. If it stopped working after a "
                                "Steam or firmware update, run the check below and share it.");
-        if (ImGui::Button("Check controller detection"))
+        if (ImGui::Button("Check controller detection")) {
             m_diagText = c.GetDiagnostics();
+            m_diagPath = Narrow(WriteDiagFile(m_diagText));
+        }
         if (!m_diagText.empty()) {
+            ImGui::SameLine();
+            if (ImGui::Button("Open log folder")) {
+                std::wstring dir = m_diagPath.empty() ? std::wstring()
+                    : Widen(m_diagPath.c_str());
+                size_t slash = dir.find_last_of(L'\\');
+                if (slash != std::wstring::npos) dir.resize(slash);
+                ShellExecuteW(nullptr, L"open", dir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+            }
             ImGui::SameLine();
             if (ImGui::Button("Copy")) {
                 if (OpenClipboard(m_hwnd)) {
@@ -1100,6 +1128,8 @@ void TrayApp::DrawTabs() {
             }
             ImGui::InputTextMultiline("##diag", m_diagText.data(), m_diagText.size() + 1,
                                       ImVec2(-1, 180), ImGuiInputTextFlags_ReadOnly);
+            if (!m_diagPath.empty())
+                ImGui::TextDisabled("Saved to: %s", m_diagPath.c_str());
         }
 
         ImGui::Spacing();

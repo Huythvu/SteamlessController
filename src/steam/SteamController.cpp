@@ -82,30 +82,57 @@ bool SteamController::Open() {
     return false;
 }
 
+static std::string NarrowAscii(const std::wstring& w) {
+    std::string s;
+    for (wchar_t c : w) s += (c > 0 && c < 128) ? static_cast<char>(c) : '?';
+    return s;
+}
+static bool IContains(const std::wstring& hay, const wchar_t* needle) {
+    std::wstring h = hay;
+    for (wchar_t& c : h) if (c >= L'A' && c <= L'Z') c = static_cast<wchar_t>(c + 32);
+    return h.find(needle) != std::wstring::npos;
+}
+
 std::string SteamController::Diagnostics() {
     std::string s;
-    char line[256];
-    auto devs = HidDevice::EnumerateInfo(VALVE_VID);
-    if (devs.empty()) {
-        s += "No Valve (VID 0x28DE) HID device is present.\n";
-        s += "- Make sure the controller is on and paired / plugged in.\n";
-        s += "- A Steam update can change how the controller enumerates.\n";
+    char line[512];
+    auto all = HidDevice::EnumerateInfo(0);   // every HID device on the system
+
+    // Anything that looks like a Steam/Valve device, by VID or by name -- this
+    // also catches a VID change from a firmware/Steam update.
+    std::vector<const HidDevice::Info*> valve;
+    for (const auto& d : all) {
+        const bool named = IContains(d.product, L"steam") || IContains(d.product, L"valve")
+                        || IContains(d.manufacturer, L"valve") || IContains(d.manufacturer, L"steam");
+        if (d.vid == VALVE_VID || named) valve.push_back(&d);
+    }
+
+    if (valve.empty()) {
+        std::snprintf(line, sizeof(line),
+            "No Steam/Valve HID device found (scanned %d HID devices).\n",
+            static_cast<int>(all.size()));
+        s += line;
+        s += "- Windows isn't seeing the controller as an HID device.\n";
+        s += "- Check Device Manager (Human Interface Devices) with it plugged in.\n";
+        s += "- Try another cable/port; a driver or Steam update may have changed it.\n";
         return s;
     }
-    std::snprintf(line, sizeof(line), "Found %d Valve HID interface(s):\n",
-                  static_cast<int>(devs.size()));
+
+    std::snprintf(line, sizeof(line), "Steam/Valve HID interfaces (%d):\n",
+                  static_cast<int>(valve.size()));
     s += line;
-    for (const auto& d : devs) {
-        std::snprintf(line, sizeof(line), "  PID=%04X  UsagePage=%04X  Usage=%02X%s\n",
-                      d.pid, d.usagePage, d.usage,
-                      d.usagePage == VENDOR_USAGE_PAGE ? "   (vendor input)" : "");
+    for (const auto* d : valve) {
+        std::snprintf(line, sizeof(line),
+            "  VID=%04X PID=%04X UsagePage=%04X Usage=%02X  \"%s\"%s\n",
+            d->vid, d->pid, d->usagePage, d->usage, NarrowAscii(d->product).c_str(),
+            d->usagePage == VENDOR_USAGE_PAGE ? "  (vendor input)" : "");
         s += line;
     }
-    for (const auto& d : devs) {
-        if (d.usagePage != VENDOR_USAGE_PAGE) continue;
+    for (const auto* d : valve) {
+        if (d->usagePage != VENDOR_USAGE_PAGE) continue;
         HidDevice dev;
-        if (!dev.Open(d.path)) {
-            std::snprintf(line, sizeof(line), "  PID=%04X vendor: could not open (in use?)\n", d.pid);
+        if (!dev.Open(d->path)) {
+            std::snprintf(line, sizeof(line), "  PID=%04X vendor: could not open (in use?)\n", d->pid);
             s += line; continue;
         }
         uint8_t buf[64];
@@ -113,18 +140,18 @@ std::string SteamController::Diagnostics() {
         if (n > 0)
             std::snprintf(line, sizeof(line),
                           "  PID=%04X vendor: report id=0x%02X, %d bytes (app wants 0x%02X)\n",
-                          d.pid, buf[0], static_cast<int>(n), REPORT_STATE);
+                          d->pid, buf[0], static_cast<int>(n), REPORT_STATE);
         else
             std::snprintf(line, sizeof(line),
-                          "  PID=%04X vendor: no report in 350ms (Steam may be holding it)\n", d.pid);
+                          "  PID=%04X vendor: no report in 350ms (Steam holding it?)\n", d->pid);
         s += line;
         dev.Close();
     }
     std::snprintf(line, sizeof(line),
-                  "\nExpected: PID 1302 (wired) or 1304 (dongle), UsagePage FF00, report 0x%02X.\n",
+                  "\nApp expects: VID 28DE, PID 1302/1304, UsagePage FF00, report 0x%02X.\n",
                   REPORT_STATE);
     s += line;
-    s += "If the PID / UsagePage / report id above differ, that's what changed.\n";
+    s += "If the VID / PID / UsagePage / report id above differ, that's the change.\n";
     return s;
 }
 

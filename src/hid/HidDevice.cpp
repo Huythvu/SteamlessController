@@ -109,6 +109,9 @@ std::vector<HidDevice::Info> HidDevice::EnumerateInfo(uint16_t vid) {
             info.vid  = attrs.VendorID;
             info.pid  = attrs.ProductID;
             info.path = detail->DevicePath;
+            wchar_t str[256];
+            if (HidD_GetProductString(h, str, sizeof(str)))      info.product      = str;
+            if (HidD_GetManufacturerString(h, str, sizeof(str))) info.manufacturer = str;
             PHIDP_PREPARSED_DATA preparsed;
             if (HidD_GetPreparsedData(h, &preparsed)) {
                 HIDP_CAPS caps{};

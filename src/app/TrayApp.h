@@ -96,6 +96,7 @@ private:
     int                                m_theme     = 0;   // 0 = dark, 1 = light
     bool                               m_compact   = false;
     std::string                        m_diagText;        // controller troubleshooting dump
+    std::string                        m_diagPath;        // where it was saved
     HICON                              m_iconOff   = nullptr;
     HICON                              m_iconOn    = nullptr;
     HDEVNOTIFY                         m_devNotify = nullptr;

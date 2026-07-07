@@ -14,7 +14,7 @@ public:
     // Details of a matching HID interface (for diagnostics).
     struct Info {
         uint16_t     vid = 0, pid = 0, usagePage = 0, usage = 0;
-        std::wstring path;
+        std::wstring path, product, manufacturer;
     };
     // Every HID interface for the given VID (pass vid=0 for all), with details.
     static std::vector<Info> EnumerateInfo(uint16_t vid);
