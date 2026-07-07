@@ -14,11 +14,21 @@ public:
     static constexpr uint16_t VENDOR_USAGE_PAGE = 0xFF00;
 
     // Input report IDs (device → host)
-    static constexpr uint8_t REPORT_STATE         = 0x45;  // 53 bytes: main controller state (changed from 0x42 in firmware update)
+    // The main state report has shipped under two IDs across firmware revisions:
+    // 0x45 (a 2025 firmware) and 0x42 (the original, and again after a 2026
+    // update). The byte layout is identical; only the leading report ID differs,
+    // so we accept either. Use IsStateReport() rather than comparing to one value.
+    static constexpr uint8_t REPORT_STATE         = 0x45;  // main controller state
+    static constexpr uint8_t REPORT_STATE_ALT      = 0x42;  // same layout, alternate firmware ID
     static constexpr uint8_t REPORT_SECONDARY      = 0x43;  // 14 bytes: gyro / secondary state
     static constexpr uint8_t REPORT_STATUS         = 0x44;  //  5 bytes: battery / connection
     static constexpr uint8_t REPORT_UNKNOWN_7B     = 0x7B;  // 12 bytes: TBD
     static constexpr uint8_t REPORT_UNKNOWN_79     = 0x79;  //  1 byte:  TBD
+
+    // True for any report ID carrying the main controller state (see above).
+    static constexpr bool IsStateReport(uint8_t id) {
+        return id == REPORT_STATE || id == REPORT_STATE_ALT;
+    }
 
     // Feature report IDs — the command channel to the firmware.
     // Commands are wrapped inside Feature Report 0x01 (or 0x02 as fallback).
@@ -41,7 +51,7 @@ public:
     static constexpr uint8_t TRACKPAD_NONE               = 0x00;
 
     // ---------------------------------------------------------------------------
-    // Input report layout — 0x45 STATE report (buf[0] = 0x45)
+    // Input report layout — STATE report (buf[0] = 0x45 or 0x42; same layout)
     // ---------------------------------------------------------------------------
 
     // buf[01]       — 8-bit sequence counter (wraps 0xFF → 0x00)
