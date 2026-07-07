@@ -137,14 +137,24 @@ std::string SteamController::Diagnostics() {
         }
         uint8_t buf[64];
         size_t n = dev.ReadInputReport(buf, sizeof(buf), /*timeoutMs=*/350);
-        if (n > 0)
+        if (n > 0) {
             std::snprintf(line, sizeof(line),
                           "  PID=%04X vendor: report id=0x%02X, %d bytes (app wants 0x%02X)\n",
                           d->pid, buf[0], static_cast<int>(n), REPORT_STATE);
-        else
+            s += line;
+            // Raw bytes of the first report, so a changed layout is visible.
+            s += "    raw:";
+            const size_t dump = n < 48 ? n : 48;
+            for (size_t j = 0; j < dump; ++j) {
+                std::snprintf(line, sizeof(line), " %02X", buf[j]);
+                s += line;
+            }
+            s += "\n";
+        } else {
             std::snprintf(line, sizeof(line),
                           "  PID=%04X vendor: no report in 350ms (Steam holding it?)\n", d->pid);
-        s += line;
+            s += line;
+        }
         dev.Close();
     }
     std::snprintf(line, sizeof(line),
