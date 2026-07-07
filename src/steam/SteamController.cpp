@@ -44,15 +44,16 @@ bool SteamController::Open() {
 
             uint8_t buf[64];
             size_t n = m_device.ReadInputReport(buf, sizeof(buf), /*timeoutMs=*/500);
-            if (n > 0 && IsStateReport(buf[0])) {
-                printf("Active interface found for PID=%04X (report 0x%02X).\n", pid, buf[0]);
+            if (n > 0 && IsStateReport(buf[0], n)) {
+                printf("Active interface found for PID=%04X (report 0x%02X, %d bytes).\n",
+                       pid, buf[0], static_cast<int>(n));
                 m_pid = pid;
                 return true;
             }
 
             if (n > 0)
-                printf("Unexpected report ID 0x%02X on PID=%04X (expected 0x%02X/0x%02X) — possible firmware mismatch.\n",
-                       buf[0], pid, REPORT_STATE, REPORT_STATE_ALT);
+                printf("Unexpected report ID 0x%02X (%d bytes) on PID=%04X (expected 0x%02X/0x%02X) — possible firmware mismatch.\n",
+                       buf[0], static_cast<int>(n), pid, REPORT_STATE, REPORT_STATE_ALT);
             else
                 printf("Read timeout on PID=%04X vendor interface — no active controller on this slot.\n", pid);
 
@@ -69,7 +70,7 @@ bool SteamController::Open() {
         if (!m_device.Open(d.path)) continue;
         uint8_t buf[64];
         size_t n = m_device.ReadInputReport(buf, sizeof(buf), /*timeoutMs=*/500);
-        if (n > 0 && IsStateReport(buf[0])) {
+        if (n > 0 && IsStateReport(buf[0], n)) {
             printf("Active interface found for unlisted PID=%04X (firmware update?).\n", d.pid);
             m_pid = d.pid;
             return true;
@@ -139,9 +140,9 @@ std::string SteamController::Diagnostics() {
         size_t n = dev.ReadInputReport(buf, sizeof(buf), /*timeoutMs=*/350);
         if (n > 0) {
             std::snprintf(line, sizeof(line),
-                          "  PID=%04X vendor: report id=0x%02X, %d bytes (app accepts 0x%02X/0x%02X)%s\n",
+                          "  PID=%04X vendor: report id=0x%02X, %d bytes (app accepts 0x%02X/0x%02X or any big report)%s\n",
                           d->pid, buf[0], static_cast<int>(n), REPORT_STATE, REPORT_STATE_ALT,
-                          IsStateReport(buf[0]) ? "  <- OK" : "");
+                          IsStateReport(buf[0], n) ? "  <- OK" : "");
             s += line;
             // Raw bytes of the first report, so a changed layout is visible.
             s += "    raw:";
@@ -159,8 +160,9 @@ std::string SteamController::Diagnostics() {
         dev.Close();
     }
     std::snprintf(line, sizeof(line),
-                  "\nApp expects: VID 28DE, PID 1302/1304, UsagePage FF00, report 0x%02X or 0x%02X.\n",
-                  REPORT_STATE, REPORT_STATE_ALT);
+                  "\nApp expects: VID 28DE, PID 1302/1304, UsagePage FF00, report 0x%02X/0x%02X\n"
+                  "(or any vendor report >= %d bytes, so a firmware renumber still works).\n",
+                  REPORT_STATE, REPORT_STATE_ALT, static_cast<int>(STATE_REPORT_MIN_LEN));
     s += line;
     s += "If the VID / PID / UsagePage / report id above differ, that's the change.\n";
     return s;

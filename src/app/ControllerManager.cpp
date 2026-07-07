@@ -422,7 +422,7 @@ void ControllerManager::ReadLoop() {
             m_batteryPercent.store(buf[2] > 100 ? 100 : buf[2]);
             continue;
         }
-        if (!SteamController::IsStateReport(buf[0])) continue;
+        if (!SteamController::IsStateReport(buf[0], n)) continue;
 
         auto held = [&](int idx) -> bool {
             if (idx < 0 || idx >= InputMapper::kSourceCount) return false;

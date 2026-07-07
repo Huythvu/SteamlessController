@@ -25,9 +25,25 @@ public:
     static constexpr uint8_t REPORT_UNKNOWN_7B     = 0x7B;  // 12 bytes: TBD
     static constexpr uint8_t REPORT_UNKNOWN_79     = 0x79;  //  1 byte:  TBD
 
-    // True for any report ID carrying the main controller state (see above).
+    // Smallest byte count we'll treat as a "big" (state-sized) report. The real
+    // state report is ~53-54 bytes; every other known report is <= 14 bytes, so
+    // this cleanly separates them with margin on both sides.
+    static constexpr size_t STATE_REPORT_MIN_LEN = 40;
+
+    // True for a report ID we already know carries the main controller state.
     static constexpr bool IsStateReport(uint8_t id) {
         return id == REPORT_STATE || id == REPORT_STATE_ALT;
+    }
+
+    // Same, but future-proofed against a firmware update that only renumbers the
+    // report (as happened when it moved 0x42 <-> 0x45). If the ID is unknown but
+    // the report is state-sized AND isn't one of the known small reports, treat
+    // it as state too, so a pure renumber doesn't break detection again.
+    static constexpr bool IsStateReport(uint8_t id, size_t len) {
+        if (IsStateReport(id)) return true;
+        if (len < STATE_REPORT_MIN_LEN) return false;
+        return id != REPORT_SECONDARY && id != REPORT_STATUS
+            && id != REPORT_UNKNOWN_7B && id != REPORT_UNKNOWN_79;
     }
 
     // Feature report IDs — the command channel to the firmware.
