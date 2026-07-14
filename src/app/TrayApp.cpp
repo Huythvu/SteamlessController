@@ -358,16 +358,17 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         return true;
 
     // Remap-by-recording: once a button on the diagram is armed, the next key
-    // the user presses becomes its mapping. Backspace clears it; Esc and Delete
-    // are assignable like any other key. Re-click the armed row/zone to cancel.
+    // the user presses becomes its mapping. No key is reserved — every keyboard
+    // key (Esc, Delete, Backspace, ...) is assignable. Clearing/cancelling is
+    // done from on-screen buttons, so nothing is stolen from the mapping space.
     // Recording a key for a D-pad direction/corner zone.
     if ((msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && m_dpadKeyRec >= 0) {
         int idx = m_dpadKeyRec;
         m_dpadKeyRec = -1;
         const bool corner = m_controller->IsDpadDiagonal();
-        // Backspace clears the zone; every other key (incl. Esc/Delete) assigns.
-        // Re-click the armed zone to cancel.
-        const int vk = (wp == VK_BACK) ? 0 : static_cast<int>(wp);
+        // Any key is assignable (no key is reserved). Right-click a zone to clear
+        // it; re-click the armed zone to cancel.
+        const int vk = static_cast<int>(wp);
         if (corner) m_controller->SetDpadQuadKey(idx, vk);
         else        m_controller->SetDpadCardKey(idx, vk);
         SaveSettings();
@@ -377,15 +378,10 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     if ((msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && m_recordIndex >= 0) {
         int idx = m_recordIndex;
         m_recordIndex = -1;
-        // Backspace clears the mapping; every other key (including Esc and Delete,
-        // which games use for pause/menu) is assignable. To cancel without
-        // changing anything, click the armed row again.
-        if (wp == VK_BACK) {
-            m_controller->SetButtonAction(idx, { InputMapper::Type::None, 0 });
-        } else {
-            m_controller->SetButtonAction(
-                idx, { InputMapper::Type::Key, static_cast<uint16_t>(wp) });
-        }
+        // Any key is assignable (no key is reserved) — use the on-screen Clear
+        // button to unmap and Cancel to leave a mapping untouched.
+        m_controller->SetButtonAction(
+            idx, { InputMapper::Type::Key, static_cast<uint16_t>(wp) });
         SaveSettings();
         return 0;
     }
@@ -735,6 +731,7 @@ void TrayApp::DrawTabs() {
                 keyBtn("Bottom-left",  3, c.GetDpadQuadKey(3));
                 keyBtn("Bottom-right", 2, c.GetDpadQuadKey(2));
             }
+            ImGui::TextDisabled("Click a slot then press any key. Right-click a slot to clear it.");
             bool dclick = c.IsDpadOnClick();
             if (ImGui::Checkbox("Activate on click (instead of touch)##dpad", &dclick)) {
                 c.SetDpadOnClick(dclick); SaveSettings();
@@ -1212,12 +1209,25 @@ void TrayApp::DrawControllerTab() {
         m_recordIndex = -1;
     }
     ImGui::SameLine(0, 16);
-    if (m_recordIndex >= 0)
-        ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.20f, 1.0f),
-            "Press a key, gamepad button, or mouse button for \"%s\"   (Backspace clears, click again to cancel)",
-            Narrow(InputMapper::kSources[m_recordIndex].name).c_str());
-    else
+    if (m_recordIndex >= 0) {
+        // While armed, Clear unmaps and Cancel leaves the mapping untouched, so
+        // no keyboard key has to be reserved for those actions.
+        if (ImGui::Button("Clear")) {
+            m_controller->SetButtonAction(m_recordIndex, { InputMapper::Type::None, 0 });
+            SaveSettings();
+            m_recordIndex = -1;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel")) m_recordIndex = -1;
+        if (m_recordIndex >= 0) {
+            ImGui::SameLine(0, 16);
+            ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.20f, 1.0f),
+                "Press a key, gamepad button, or mouse button for \"%s\"",
+                Narrow(InputMapper::kSources[m_recordIndex].name).c_str());
+        }
+    } else {
         ImGui::TextDisabled("Click a button then press a key / gamepad / mouse button. Right-click = reset to default.");
+    }
     ImGui::Spacing();
 
     const float S = 1.2f;                 // scale the original pixel layout
