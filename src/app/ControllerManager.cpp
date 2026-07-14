@@ -444,14 +444,15 @@ void ControllerManager::ReadLoop() {
 
         if (!m_keyboardMode.load()) {
             std::lock_guard<std::mutex> lock(m_inputMutex);
-            // Pads that drive their own thing ignore the default pad-click
-            // mapping so a press doesn't also fire a stray mouse button. Buttons
-            // (zones are the buttons), Directional keys, and Mouse all own the
-            // pad; Scroll / Stick / Off keep the default click.
+            // Roles that provide their OWN click targets ignore the default
+            // pad-click mapping so a press doesn't also fire a stray mouse
+            // button: Buttons (zones are the buttons) and Directional keys
+            // (corner/cardinal zones). Mouse, Scroll, Stick and Off keep the
+            // default pad-click, so the tap does whatever was assigned to it in
+            // the Controller tab (e.g. Left Click) instead of being swallowed.
             auto consumesClick = [&](PadRole role) {
                 return role == PadRole::Buttons
-                    || role == PadRole::Dpad
-                    || role == PadRole::Mouse;
+                    || role == PadRole::Dpad;
             };
             const bool maskR = consumesClick(m_padRoleRight);   // source 19 = right pad click
             const bool maskL = consumesClick(m_padRoleLeft);    // source 20 = left pad click

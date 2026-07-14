@@ -358,35 +358,35 @@ LRESULT TrayApp::HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         return true;
 
     // Remap-by-recording: once a button on the diagram is armed, the next key
-    // the user presses becomes its mapping (Esc cancels, Del/Backspace clears).
+    // the user presses becomes its mapping. Backspace clears it; Esc and Delete
+    // are assignable like any other key. Re-click the armed row/zone to cancel.
     // Recording a key for a D-pad direction/corner zone.
     if ((msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && m_dpadKeyRec >= 0) {
         int idx = m_dpadKeyRec;
         m_dpadKeyRec = -1;
         const bool corner = m_controller->IsDpadDiagonal();
-        const int vk = (wp == VK_ESCAPE) ? -1
-                     : (wp == VK_DELETE || wp == VK_BACK) ? 0 : static_cast<int>(wp);
-        if (vk >= 0) {
-            if (corner) m_controller->SetDpadQuadKey(idx, vk);
-            else        m_controller->SetDpadCardKey(idx, vk);
-            SaveSettings();
-        }
+        // Backspace clears the zone; every other key (incl. Esc/Delete) assigns.
+        // Re-click the armed zone to cancel.
+        const int vk = (wp == VK_BACK) ? 0 : static_cast<int>(wp);
+        if (corner) m_controller->SetDpadQuadKey(idx, vk);
+        else        m_controller->SetDpadCardKey(idx, vk);
+        SaveSettings();
         return 0;
     }
 
     if ((msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && m_recordIndex >= 0) {
         int idx = m_recordIndex;
         m_recordIndex = -1;
-        if (wp == VK_ESCAPE) {
-            // cancel: leave the mapping untouched
-        } else if (wp == VK_DELETE || wp == VK_BACK) {
+        // Backspace clears the mapping; every other key (including Esc and Delete,
+        // which games use for pause/menu) is assignable. To cancel without
+        // changing anything, click the armed row again.
+        if (wp == VK_BACK) {
             m_controller->SetButtonAction(idx, { InputMapper::Type::None, 0 });
-            SaveSettings();
         } else {
             m_controller->SetButtonAction(
                 idx, { InputMapper::Type::Key, static_cast<uint16_t>(wp) });
-            SaveSettings();
         }
+        SaveSettings();
         return 0;
     }
 
@@ -830,9 +830,11 @@ void TrayApp::DrawTabs() {
             for (int i = 0; i < 4; ++i) v.cardKey[i] = c.GetDpadCardKey(i);
             for (int i = 0; i < 4; ++i) v.quadKey[i] = c.GetDpadQuadKey(i);
             v.stickDz = stickDz;
-            // Mouse / Directional / Buttons own the pad and ignore the default
-            // pad-click, so the live view shouldn't flash the click for them.
-            v.clickActive = role == static_cast<int>(PadRole::Scroll)
+            // Directional / Buttons own the pad and ignore the default pad-click,
+            // so the live view shouldn't flash the click for them. Mouse keeps the
+            // default pad-click (the assigned tap), so it does show the click.
+            v.clickActive = role == static_cast<int>(PadRole::Mouse)
+                         || role == static_cast<int>(PadRole::Scroll)
                          || role == static_cast<int>(PadRole::Stick)
                          || role == static_cast<int>(PadRole::Off);
             return v;
@@ -1166,12 +1168,14 @@ static std::string ActionLabel(InputMapper::Action a) {
         if (t[i].type == a.type && t[i].value == a.value)
             return std::string(prefix) + Narrow(t[i].name);
 
-    // A recorded key that isn't in the preset table: show it anyway.
+    // A recorded key that isn't in the preset table (e.g. Delete, Home): show
+    // a friendly name. VkLabel() names the nav/edit keys and single alnum keys;
+    // for printable punctuation it returns "VK<n>", so fall back to the glyph.
     if (a.type == InputMapper::Type::Key) {
-        if (a.value >= 0x21 && a.value <= 0x7E)
+        std::string nm = VkLabel(static_cast<int>(a.value));
+        if (nm.rfind("VK", 0) == 0 && a.value >= 0x21 && a.value <= 0x7E)
             return std::string("Key ") + static_cast<char>(a.value);
-        char b[16]; std::snprintf(b, sizeof(b), "Key %u", a.value);
-        return b;
+        return std::string("Key ") + nm;
     }
     return "?";
 }
@@ -1210,7 +1214,7 @@ void TrayApp::DrawControllerTab() {
     ImGui::SameLine(0, 16);
     if (m_recordIndex >= 0)
         ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.20f, 1.0f),
-            "Press a key, gamepad button, or mouse button for \"%s\"   (Esc cancel, Del clear)",
+            "Press a key, gamepad button, or mouse button for \"%s\"   (Backspace clears, click again to cancel)",
             Narrow(InputMapper::kSources[m_recordIndex].name).c_str());
     else
         ImGui::TextDisabled("Click a button then press a key / gamepad / mouse button. Right-click = reset to default.");
@@ -1249,7 +1253,8 @@ void TrayApp::DrawControllerTab() {
                                ImVec2(w * S, h * S),
                                ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
         bool hov = ImGui::IsItemHovered();
-        if (ImGui::IsItemClicked(ImGuiMouseButton_Left))  m_recordIndex = idx;
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
+            m_recordIndex = (m_recordIndex == idx) ? -1 : idx;   // click armed row again to cancel
         if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
             m_controller->SetButtonAction(idx, InputMapper::kSources[idx].def);
             SaveSettings();
@@ -1392,7 +1397,7 @@ void TrayApp::DrawControllerTab() {
             if (pressed) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.35f, 0.85f, 0.45f, 1.0f));
             if (ImGui::Selectable(Narrow(InputMapper::kSources[i].name).c_str(), rec,
                                   ImGuiSelectableFlags_SpanAllColumns))
-                m_recordIndex = i;
+                m_recordIndex = rec ? -1 : i;   // click armed row again to cancel
             if (pressed) ImGui::PopStyleColor();
             if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
                 m_controller->SetButtonAction(i, InputMapper::kSources[i].def);
